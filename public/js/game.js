@@ -15,6 +15,8 @@
     return a + d * t;
   }
 
+  function setPointerFor(g, x, y) { g.mouse.sx = x; g.mouse.sy = y; g.mouse.in = true; g.updateHover(); }
+
   class Game {
     constructor(ui, renderer, canvas, start, transport) {
       this.ui = ui; this.r = renderer; this.canvas = canvas; this.transport = transport;
@@ -38,6 +40,7 @@
       this.drag = null;
       this.mouse = { sx: 0, sy: 0, wx: null, wy: null, in: false };
       this.edge = { x: 0, y: 0, on: false }; // pointer position relative to the whole window, for edge scrolling
+      this.pad = [0, 0]; this.boxMode = false; this.touches = new Map(); this.touchAt = -1e9; this.lastTap = null; this.pinch = null;
       this.keys = new Set();
       this.orderMarks = [];
       this.pings = [];
@@ -372,6 +375,11 @@
       } else { this.cam.shx = 0; this.cam.shy = 0; }
       // hover
       if (this.mouse.in) this.updateHover();
+      const acting = !!(this.placing || this.mode), b = document.body.classList;
+      b.toggle('acting', acting); b.toggle('acting-confirm', !!(this.placing || this.mode === 'sw'));
+      if (acting && !this._actLbl) this._actLbl = document.getElementById('tbOkLbl');
+      if (this._actLbl) { const t = GA.tt(this.mode === 'sw' ? 'Fire here' : 'Build here'); if (this._actLbl.textContent !== t) this._actLbl.textContent = t; }
+      document.getElementById('tbBox').classList.toggle('on', this.boxMode);
     }
     updateCamera(dt) {
       const k = this.keys, cam = this.cam;
@@ -381,6 +389,7 @@
       if (k.has('ArrowUp')) sy -= 1;
       if (k.has('ArrowDown')) sy += 1;
       let speed = 1;
+      if (!sx && !sy && (this.pad[0] || this.pad[1])) { sx = this.pad[0]; sy = this.pad[1]; }
       if (!sx && !sy && this.edge.on && !this.drag && !this.midDrag && !document.querySelector('#pauseMenu:not(.hidden), #endScreen:not(.hidden)')) {
         // the zone is measured from the window edge (HUD panels do not block it); speed ramps up towards the edge
         const zone = 22, w = this.r.w, h = this.r.h, e = this.edge;
@@ -541,6 +550,7 @@
       on(cv, 'mouseenter', (e) => { const [x, y] = pos(e); this.mouse.sx = x; this.mouse.sy = y; this.mouse.in = true; });
       on(cv, 'mouseleave', () => { this.mouse.in = false; });
       on(cv, 'mousemove', (e) => {
+        if (performance.now() - this.touchAt < 700) return;
         const [x, y] = pos(e);
         this.mouse.sx = x; this.mouse.sy = y; this.mouse.in = true; this.mouse.moved = true;
         if (this.drag) { this.drag.x1 = x; this.drag.y1 = y; if (Math.hypot(x - this.drag.x0, y - this.drag.y0) > 5) this.drag.active = true; }
@@ -553,6 +563,7 @@
         }
       });
       on(cv, 'mousedown', (e) => {
+        if (performance.now() - this.touchAt < 700) return;
         Audio.init(); Audio.startMusic();
         const [x, y] = pos(e);
         this.mouse.sx = x; this.mouse.sy = y;
@@ -568,17 +579,138 @@
       on(cv, 'wheel', (e) => {
         e.preventDefault();
         const [x, y] = pos(e);
-        const before = this.screenToWorld(x, y);
-        const z = Math.max(0.55, Math.min(1.6, this.cam.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
-        this.cam.zoom = z;
-        const after = this.screenToWorld(x, y);
-        this.cam.x += before[0] - after[0]; this.cam.y += before[1] - after[1];
+        this.zoomAt(x, y, e.deltaY < 0 ? 1.1 : 1 / 1.1);
       }, { passive: false });
+      this.bindTouch(on, pos);
       on(window, 'mousemove', (e) => { this.edge.x = e.clientX; this.edge.y = e.clientY; this.edge.on = e.buttons === 0; });
       on(document.documentElement, 'mouseleave', () => { this.edge.on = false; });
       on(window, 'keydown', (e) => this.keyDown(e));
       on(window, 'keyup', (e) => { this.keys.delete(e.key); });
-      on(window, 'blur', () => { this.keys.clear(); this.midDrag = null; this.drag = null; this.edge.on = false; });
+      on(window, 'blur', () => { this.keys.clear(); this.midDrag = null; this.drag = null; this.edge.on = false; this.pad = [0, 0]; this.touches.clear(); this.pinch = null; });
+    }
+    zoomAt(x, y, factor) {
+      const before = this.screenToWorld(x, y);
+      this.cam.zoom = Math.max(0.55, Math.min(1.6, this.cam.zoom * factor));
+      const after = this.screenToWorld(x, y);
+      this.cam.x += before[0] - after[0]; this.cam.y += before[1] - after[1];
+    }
+    panBy(dx, dy) {
+      const v = this.r.v, a = -dx / v.A, b = -dy / v.B;
+      this.cam.x += (a + b) / 2; this.cam.y += (b - a) / 2;
+    }
+    cancelAction() {
+      if (this.placing) { this.placing = null; this.ui.update(this); }
+      else if (this.mode) this.setMode(null);
+    }
+    setBoxMode(on) { this.boxMode = on; }
+
+    // ------------------------------------------------------------ touch (iPad): tap / drag-pan / pinch / long-press, edge pads and the on-screen buttons
+    bindTouch(on, pos) {
+      const cv = this.canvas, doc = document;
+      const setPointer = (x, y) => { this.mouse.sx = x; this.mouse.sy = y; this.mouse.in = true; this.updateHover(); };
+      on(cv, 'pointerdown', (e) => {
+        if (e.pointerType !== 'touch') return;
+        e.preventDefault();
+        try { cv.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+        Audio.init(); Audio.startMusic();
+        doc.body.classList.add('touch');
+        this.touchAt = performance.now();
+        const [x, y] = pos(e);
+        const t = { id: e.pointerId, x, y, px: x, py: y, x0: x, y0: y, moved: false, long: false, timer: 0 };
+        this.touches.set(e.pointerId, t);
+        if (this.touches.size === 1) t.timer = setTimeout(() => this.touchLong(t), 480);
+        else {
+          for (const o of this.touches.values()) { clearTimeout(o.timer); o.moved = true; }
+          this.drag = null;
+          const [a, b] = [...this.touches.values()];
+          this.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+        }
+      });
+      on(cv, 'pointermove', (e) => {
+        if (e.pointerType !== 'touch') return;
+        const t = this.touches.get(e.pointerId);
+        if (!t) return;
+        e.preventDefault();
+        this.touchAt = performance.now();
+        const [x, y] = pos(e);
+        t.px = t.x; t.py = t.y; t.x = x; t.y = y;
+        if (this.touches.size >= 2 && this.pinch) {
+          const [a, b] = [...this.touches.values()];
+          const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+          this.r.setView(this.cam);
+          this.panBy(mx - this.pinch.mx, my - this.pinch.my);
+          this.zoomAt(mx, my, d / this.pinch.d);
+          this.pinch = { d, mx, my };
+          return;
+        }
+        if (!t.moved && Math.hypot(x - t.x0, y - t.y0) > 12) { t.moved = true; clearTimeout(t.timer); }
+        if (!t.moved) return;
+        if (this.placing || this.mode === 'sw') setPointer(x, y - 56);   // the aim point sits above the finger
+        else if (this.boxMode) this.drag = { x0: t.x0, y0: t.y0, x1: x, y1: y, active: true };
+        else { this.r.setView(this.cam); this.panBy(x - t.px, y - t.py); }
+      });
+      const end = (e) => {
+        if (e.pointerType !== 'touch') return;
+        const t = this.touches.get(e.pointerId);
+        if (!t) return;
+        clearTimeout(t.timer);
+        this.touches.delete(e.pointerId);
+        this.touchAt = performance.now();
+        if (this.touches.size === 0) this.pinch = null;
+        if (e.type === 'pointercancel') { this.drag = null; return; }
+        if (this.boxMode && this.drag && this.drag.active) { this.leftUp(false, false); this.boxMode = false; return; }
+        if (!t.moved && !t.long && this.touches.size === 0) this.touchTap(t);
+      };
+      on(cv, 'pointerup', end); on(cv, 'pointercancel', end);
+
+      // big scroll pads along the edges of the map area
+      doc.querySelectorAll('#panPads [data-pad]').forEach((el) => {
+        const dir = el.dataset.pad.split(',').map(Number);
+        on(el, 'pointerdown', (e) => { e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } this.pad = dir; el.classList.add('on'); doc.body.classList.add('touch'); this.touchAt = performance.now(); Audio.init(); });
+        const off = () => { this.pad = [0, 0]; el.classList.remove('on'); };
+        on(el, 'pointerup', off); on(el, 'pointercancel', off); on(el, 'lostpointercapture', off);
+      });
+      // on-screen buttons
+      const btn = (id, fn) => { const b = doc.getElementById(id); if (b) on(b, 'click', fn); };
+      btn('tbBox', () => this.setBoxMode(!this.boxMode));
+      btn('tbAmove', () => { if (this.selUnits().some((u) => u.def.wp)) this.setMode(this.mode === 'amove' ? null : 'amove'); });
+      btn('tbStop', () => this.stopSel());
+      btn('tbHome', () => this.goHome());
+      btn('tbClear', () => { this.sel.clear(); this.ui.selectionChanged(this); });
+      btn('tbOk', () => this.leftDown(false));
+      btn('tbCancel', () => this.cancelAction());
+    }
+    touchLong(t) {
+      if (!this.touches.has(t.id) || t.moved) return;
+      t.long = true;
+      setPointerFor(this, t.x, t.y);
+      if (this.placing || this.mode === 'sw') return;
+      const e = this.hoverId ? this.ents.get(this.hoverId) : null;
+      if (e && e.owner === this.me && !e.isB) {           // long-press a unit: select every unit of that type on screen
+        this.drag = { x0: t.x, y0: t.y, x1: t.x, y1: t.y, active: false };
+        this.leftUp(false, true);
+        return;
+      }
+      const ids = this.selUnits().map((u) => u.id);
+      if (!ids.length) return;
+      const wx = Math.max(1, Math.min(W - 1, this.mouse.wx)), wy = Math.max(1, Math.min(H - 1, this.mouse.wy));
+      if (this.hoverRock >= 0) this.orderAt(wx, wy, null, false, this.hoverRock);
+      else { this.send({ type: 'amove', ids, x: wx, y: wy }); this.mark(wx, wy, 'attack'); Audio.play('order', 0.8); }
+    }
+    touchTap(t) {
+      setPointerFor(this, t.x0, t.y0);
+      const now = performance.now();
+      const dbl = !!(this.lastTap && now - this.lastTap.t < 320 && Math.hypot(t.x0 - this.lastTap.x, t.y0 - this.lastTap.y) < 30);
+      this.lastTap = { t: now, x: t.x0, y: t.y0 };
+      if (this.placing || this.mode === 'sw') return;     // aim only; the confirm button places / fires
+      if (this.mode) { this.leftDown(false); return; }     // attack-move / sell / repair act on tap
+      const e = this.hoverId ? this.ents.get(this.hoverId) : null;
+      if (!e) {
+        const wx = Math.max(1, Math.min(W - 1, this.mouse.wx)), wy = Math.max(1, Math.min(H - 1, this.mouse.wy));
+        if (this.selUnits().length || this.selBuildings().some((b) => b.type === 'barracks' || b.type === 'factory')) { this.orderAt(wx, wy, null, false, this.hoverRock); return; }
+      }
+      this.drag = { x0: t.x0, y0: t.y0, x1: t.x0, y1: t.y0, active: false };
+      this.leftUp(false, dbl);
     }
     unbind() { for (const k of Object.keys(this._h)) { const [t, ev, fn, o] = this._h[k]; t.removeEventListener(ev, fn, o); } this._h = {}; }
 

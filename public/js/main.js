@@ -5,6 +5,7 @@
   const $ = (id) => document.getElementById(id);
   const PAL = GA.PALETTE;
 
+  if (window.matchMedia && matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');
   const canvas = $('game');
   const renderer = new GA.Renderer(canvas);
   const ui = new GA.UI();

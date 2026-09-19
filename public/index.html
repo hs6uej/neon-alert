@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#05080d">
 <title>NEON ALERT</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -149,6 +153,7 @@
       <div><h3>Economy</h3><p data-i18n-html="help_economy">Build a <b>Fusion Reactor</b> first (power), then an <b>Ore Processor</b> — it comes with a free <b>Nano Harvester</b> that mines the green crystals. Low power slows production and shuts down towers and the radar.</p></div>
       <div><h3>Base &amp; army</h3><p data-i18n-html="help_base">Click a structure in the sidebar, wait for <b>READY</b>, then click it again and place it next to your base. Barracks train infantry, the Assembly Forge builds vehicles &amp; drones. The <b>Sensor Array</b> gives you the minimap and advanced units, the <b>Quantum Lab</b> unlocks elite tech and the <b>Orbital Uplink</b> superweapon.</p></div>
       <div><h3>Controls</h3><p data-i18n-html="help_controls"><b>LMB</b> select / drag-box · <b>RMB</b> move / attack / mine · <b>A</b> attack-move · <b>S</b> stop · <b>D</b> deploy MCV · <b>H</b> home · <b>Space</b> last alert · <b>Ctrl+1-9</b> set group, <b>1-9</b> recall · <b>R</b> repair · <b>X</b> sell · <b>Tab</b> next build tab · <b>Enter</b> chat · Arrow keys / screen edge / MMB-drag to scroll, wheel to zoom. <b>Shift-click</b> a card to queue 5.</p></div>
+      <div><h3>Touch (iPad)</h3><p data-i18n-html="help_touch">Tap a card to build or train. <b>Tap</b> your unit to select it; with units selected, tap the ground to move and tap an enemy to attack. <b>Drag</b> the map or use the big <b>edge pads</b> to scroll, <b>pinch</b> to zoom, <b>long-press</b> the ground for attack-move. Use <b>Select</b> to drag a box around several units. When placing a building, drag to aim and press <b>Build here</b>.</p></div>
       <div><h3>Tips</h3><p data-i18n-html="help_tips"><b>Breach Engineers</b> capture enemy buildings - and neutral <b>Crystal Derricks</b> (steady income) and <b>Supply Depots</b> (cash bonus). Right-click a Barracks / Forge to set a <b>rally point</b>. Right-click a <b>rock wall</b> with combat units to blast a path through it. Rocket Lancers and Pulse Towers hit air. Rail Strikers wreck armor.</p></div>
     </div>
     <div class="btns row"><button class="ghost" data-back>← Back</button></div>
@@ -157,6 +162,23 @@
 
 <!-- ============ HUD ============ -->
 <div id="hud" class="hidden">
+  <div id="panPads" aria-hidden="true">
+    <div data-pad="0,-1" class="pad p-n"><i>▲</i></div><div data-pad="0,1" class="pad p-s"><i>▼</i></div>
+    <div data-pad="-1,0" class="pad p-w"><i>◀</i></div><div data-pad="1,0" class="pad p-e"><i>▶</i></div>
+    <div data-pad="-1,-1" class="pad p-nw"><i>◤</i></div><div data-pad="1,-1" class="pad p-ne"><i>◥</i></div>
+    <div data-pad="-1,1" class="pad p-sw"><i>◣</i></div><div data-pad="1,1" class="pad p-se"><i>◢</i></div>
+  </div>
+  <div id="touchBar">
+    <button id="tbBox" type="button" title="Box select">▭<small>Select</small></button>
+    <button id="tbAmove" type="button" title="Attack-move">⚔<small>Attack</small></button>
+    <button id="tbStop" type="button" title="Stop">■<small>Stop</small></button>
+    <button id="tbHome" type="button" title="Go to base">⌂<small>Base</small></button>
+    <button id="tbClear" type="button" title="Deselect">✕<small>Clear</small></button>
+  </div>
+  <div id="actBar">
+    <button id="tbOk" type="button" class="primary">✓ <span id="tbOkLbl">Build here</span></button>
+    <button id="tbCancel" type="button">✕ Cancel</button>
+  </div>
   <div id="topbar">
     <div class="stat cred"><span class="ico">◈</span><b id="creditsVal">0</b></div>
     <div class="stat pwr"><span class="lbl">POWER</span><div class="pbar"><div id="pwFill"></div></div><span id="pwText">0/0</span></div>

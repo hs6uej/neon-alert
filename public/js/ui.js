@@ -36,6 +36,9 @@
       this.el.mini.addEventListener('mousedown', (e) => this.miniMouse(e));
       this.el.mini.addEventListener('mousemove', (e) => { if (e.buttons & 1) this.miniMouse(e); });
       this.el.mini.addEventListener('contextmenu', (e) => e.preventDefault());
+      this.el.mini.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'touch') return; e.preventDefault(); try { this.el.mini.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } this.miniTouch = true; this.miniMouse(e); });
+      this.el.mini.addEventListener('pointermove', (e) => { if (e.pointerType === 'touch' && this.miniTouch) this.miniMouse(e); });
+      for (const ev of ['pointerup', 'pointercancel']) this.el.mini.addEventListener(ev, () => { this.miniTouch = false; });
       $('btnMenu').onclick = () => this.togglePause();
       $('btnResume').onclick = () => this.togglePause(false);
       this.el.btnSound.onclick = () => { const on = !GA.Audio.sfxOn; GA.Audio.setSfx(on); GA.Audio.voiceOn = on; this.el.btnSound.classList.toggle('off', !on); };
@@ -55,7 +58,7 @@
       const mp = GA.MAPS.find((x) => x.id === game.map.mapId);
       $('mapName').textContent = mp ? '🗺 ' + mp.name : '';
       $('chatBox').classList.toggle('hidden', game.local);
-      this.toast('Build a Fusion Reactor first, then a Refinery.  RMB = move / attack · A = attack-move · H = home', 'info', 9000);
+      this.toast(document.body.classList.contains('touch') ? 'Tap a card to build. Tap the map to move / attack · long-press = attack-move · pinch to zoom · drag or use the edge pads to scroll' : 'Build a Fusion Reactor first, then a Refinery.  RMB = move / attack · A = attack-move · H = home', 'info', 9000);
     }
     detach() {
       this.game = null;
@@ -98,11 +101,14 @@
       if (t) { t.classList.add('flash'); setTimeout(() => t.classList.remove('flash'), 2500); }
       if (cat === 'structure' && this.tab !== 'structure') this.toast('Structure ready to place', 'good');
     }
-    nextTab() { const i = CATS.indexOf(this.tab); this.setTab(CATS[(i + 1) % CATS.length]); }
+    nextTab() {
+      const shown = CATS.filter((c) => !this.tabHidden || !this.tabHidden[c]);
+      if (shown.length) this.setTab(shown[(shown.indexOf(this.tab) + 1) % shown.length]);
+    }
     setTab(cat) {
       this.tab = cat;
       for (const t of this.el.tabs.children) t.classList.toggle('active', t.dataset.cat === cat);
-      for (const c of this.el.list.children) c.classList.toggle('hidden', c.dataset.cat !== cat);
+      for (const c of this.el.list.children) if (c.dataset.cat) c.classList.toggle('hidden', c.dataset.cat !== cat);
     }
     syncTools(g) {
       this.el.toolRepair.classList.toggle('active', g.mode === 'repair');
@@ -156,6 +162,9 @@
         }
         this.el.list.appendChild(list);
       }
+      this.emptyNote = document.createElement('p');
+      this.emptyNote.className = 'emptynote hidden'; this.emptyNote.textContent = 'Nothing to build yet.';
+      this.el.list.appendChild(this.emptyNote);
       this.setTab('structure');
     }
     canBuild(g, type) {
@@ -190,12 +199,17 @@
         tab.style.width = front ? Math.floor((front[2] ? 1 : front[1]) * 100) + '%' : '0%';
         this.el.tabs.querySelector(`[data-cat="${cat}"]`).classList.toggle('ready', !!(front && front[2]));
       }
+      const shown = {};
       for (const type of Object.keys(this.cards)) {
         const c = this.cards[type], d = DEFS[type];
         const missing = this.canBuild(g, type);
         const queue = q[d.cat];
         let n = 0;
         for (const it of queue) if (TYPES[it[0]] === type) n++;
+        // only what can be built right now (or is already in the queue) is listed
+        const vis = !missing || n > 0;
+        if (c.vis !== vis) { c.vis = vis; c.el.style.display = vis ? '' : 'none'; }
+        if (vis) shown[d.cat] = true;
         const front = queue[0];
         const isFront = front && TYPES[front[0]] === type;
         let state = '', prog = 0, cls = '';
@@ -210,6 +224,15 @@
         c.bd.textContent = n > 1 ? n : '';
         c.bd.style.display = n > 1 ? 'block' : 'none';
       }
+      this.tabHidden = {};
+      for (const cat of CATS) {
+        this.tabHidden[cat] = !shown[cat];
+        const btn = this.el.tabs.querySelector(`[data-cat="${cat}"]`);
+        if (btn.hidden !== !shown[cat]) btn.hidden = !shown[cat];
+      }
+      if (this.tabHidden[this.tab]) { const first = CATS.find((c) => shown[c]); if (first) this.setTab(first); }
+      const none = !CATS.some((c) => shown[c]);
+      this.emptyNote.classList.toggle('hidden', !none);
     }
 
     // -------------------------------------------------------------- players list
