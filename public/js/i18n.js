@@ -136,6 +136,19 @@
     'Username must be 3-16 characters: letters, numbers, _ or -': 'ชื่อผู้ใช้ต้องยาว 3-16 ตัว ใช้ได้เฉพาะตัวอักษร ตัวเลข _ หรือ -', 'Password must be 6-64 characters': 'รหัสผ่านต้องยาว 6-64 ตัวอักษร',
     'That username is already taken': 'ชื่อผู้ใช้นี้ถูกใช้แล้ว', 'Too many attempts. Try again in a few minutes.': 'ลองหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่', 'Wrong username or password': 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
     // ---- admin page
+    // ---- custom buildings / units / weapons (admin)
+    '＋ New building': '＋ สร้างอาคารใหม่', '＋ New unit': '＋ สร้างยูนิตใหม่', '＋ New weapon': '＋ สร้างอาวุธใหม่', 'Switch everything on': 'เปิดทั้งหมด', 'In battle': 'ลงสนามรบ',
+    'New building': 'อาคารใหม่', 'New unit': 'ยูนิตใหม่', 'New weapon': 'อาวุธใหม่', 'Based on (copies its look, abilities and stats)': 'สร้างจาก (คัดลอกหน้าตา ความสามารถ และค่าสถานะ)', 'Based on': 'สร้างจาก', 'Create': 'สร้าง',
+    '★ CUSTOM': '★ สร้างเอง', 'SWITCHED OFF': 'ปิดอยู่', 'NEEDS A SWITCHED-OFF BUILDING': 'ต้องมีอาคารที่ปิดอยู่', 'Give it a name first.': 'ตั้งชื่อก่อน',
+    'e.g. Field Barracks': 'เช่น ค่ายทหารสนาม', 'e.g. Storm Tank': 'เช่น รถถังพายุ', 'e.g. Storm cannon': 'เช่น ปืนใหญ่พายุ',
+    'The game cannot run without this - it always stays on.': 'เกมขาดสิ่งนี้ไม่ได้ - เปิดอยู่เสมอ', 'Off = it never appears on the battlefield (cannot be built or trained; bots skip it).': 'ปิด = ไม่ลงสนามรบเลย (สร้าง/ฝึกไม่ได้ บอทก็ข้าม)',
+    'Structures. The picture is what the game draws. Untick "In battle" to keep a building off the battlefield, or create your own building as a copy of an existing one (it acts like the original: a copy of the Barracks trains infantry, a copy of the Ore Processor refines ore, ...). Yellow fields differ from the built-in defaults (hover a field to see the default). "Requires" is a comma separated list of building ids.':
+      'อาคาร ภาพที่เห็นคือสิ่งที่เกมวาดจริง เอาเครื่องหมายถูกที่ "ลงสนามรบ" ออกเพื่อไม่ให้อาคารนั้นลงสนาม หรือสร้างอาคารของคุณเองเป็นสำเนาของอาคารเดิม (ทำหน้าที่เหมือนต้นแบบ: สำเนาค่ายทหารฝึกทหารได้ สำเนาโรงกลั่นแร่กลั่นแร่ได้ ...) ช่องสีเหลืองคือค่าที่ต่างจากค่าเริ่มต้น (เลื่อนเมาส์ไปที่ช่องเพื่อดูค่าเดิม) "Requires" คือรายชื่ออาคารที่ต้องมี คั่นด้วยจุลภาค',
+    'Units. The picture is what the game draws. Untick "In battle" to keep a unit off the battlefield, or create your own unit as a copy of an existing one with its own name, stats and weapon. Speed is in tiles per second; build time is in seconds at full power.':
+      'ยูนิต ภาพที่เห็นคือสิ่งที่เกมวาดจริง เอาเครื่องหมายถูกที่ "ลงสนามรบ" ออกเพื่อไม่ให้ยูนิตนั้นลงสนาม หรือสร้างยูนิตของคุณเองเป็นสำเนาของยูนิตเดิมที่มีชื่อ ค่าสถานะ และอาวุธของตัวเอง ความเร็วเป็นช่องต่อวินาที เวลาสร้างเป็นวินาทีเมื่อไฟฟ้าเต็ม',
+    'Weapons. Damage class decides which armor multipliers apply (see "Armor" tab). Set a unit\'s weapon on the Units / Structures tab - your own weapons show up in that list too. Projectile speed 0 = instant beam.':
+      'อาวุธ ประเภทความเสียหายกำหนดตัวคูณเกราะที่ใช้ (ดูแท็บ "เกราะ") ตั้งอาวุธของยูนิตได้ที่แท็บยูนิต/อาคาร - อาวุธที่คุณสร้างจะอยู่ในรายการนั้นด้วย ความเร็วกระสุน 0 = ลำแสงทันที',
+    'At most 24 custom buildings / units.': 'สร้างเองได้สูงสุด 24 อาคาร/ยูนิต', 'At most 12 custom weapons.': 'สร้างอาวุธเองได้สูงสุด 12 อย่าง',
     // ---- map editor
     'Maps': 'แผนที่', 'Map editor: build a battlefield for 2 or 3 players. Maps you save appear in the map picker for Skirmish and online rooms. The outer edge is always indestructible rock; rock inside the map can be destroyed in-game.':
       'ตัวแก้ไขแผนที่: สร้างสนามรบสำหรับ 2 หรือ 3 ผู้เล่น แผนที่ที่บันทึกจะไปอยู่ในตัวเลือกแผนที่ของโหมดเล่นกับบอทและห้องออนไลน์ หินขอบนอกสุดทำลายไม่ได้เสมอ ส่วนหินภายในแผนที่ทำลายได้ในเกม',
@@ -249,6 +262,10 @@
     [/^Reset rating and stats of "(.+)"\?$/, (m) => `รีเซ็ตเรตติ้งและสถิติของ "${m[1]}" ใช่หรือไม่?`],
     [/^Close room (\w+)\?$/, (m) => `ปิดห้อง ${m[1]} ใช่หรือไม่?`],
     [/^Delete map "(.+)"\?$/, (m) => `ลบแผนที่ "${m[1]}" ใช่หรือไม่?`],
+    [/^Delete "(.+)"\?$/, (m) => `ลบ "${m[1]}" ใช่หรือไม่?`],
+    [/^Delete weapon "(.+)"\? Units using it fall back to their original weapon\.$/, (m) => `ลบอาวุธ "${m[1]}" ใช่หรือไม่? ยูนิตที่ใช้อยู่จะกลับไปใช้อาวุธเดิม`],
+    [/^based on (.+)$/, (m) => `สร้างจาก ${tt(m[1])}`],
+    [/^(\d+) \/ (\d+) (building|unit)s in battle$/, (m) => `${m[1]} / ${m[2]} ${m[3] === 'building' ? 'อาคาร' : 'ยูนิต'}ลงสนามรบ`],
   ];
 
   // ---------------------------------------------------------------------------- translation core

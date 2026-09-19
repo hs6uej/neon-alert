@@ -7,6 +7,8 @@
   const Audio = GA.Audio;
 
   const B_HEIGHT = { conyard: 2.1, power: 1.1, refinery: 1.5, barracks: 0.9, factory: 1.6, radar: 1.6, techlab: 1.4, turret: 0.85, uplink: 2.8, derrick: 1.5, depot: 0.9 };
+  GA.B_HEIGHT = B_HEIGHT;
+  const role = GA.roleOf;
 
   function angLerp(a, b, t) {
     let d = b - a;
@@ -126,7 +128,10 @@
       this.st = m.me;
       this.swCharge = m.me.sw[0]; this.swReady = !!m.me.sw[1];
       this.counts = {};
-      for (const e of this.ents.values()) if (e.isB && e.owner === this.me && !e.ghost) this.counts[e.type] = (this.counts[e.type] || 0) + 1;
+      for (const e of this.ents.values()) if (e.isB && e.owner === this.me && !e.ghost) {
+        this.counts[e.type] = (this.counts[e.type] || 0) + 1;
+        if (e.def.role && e.def.role !== e.type) this.counts[e.def.role] = (this.counts[e.def.role] || 0) + 1;
+      }
       this.pl = m.pl;
       for (const ev of m.ev) this.handleEvent(ev, now);
       if (m.over && !this.over) { this.over = m.over; this.ui.gameOver(this, m.over); }
@@ -409,7 +414,7 @@
     centerOn(x, y) { this.cam.x = x; this.cam.y = y; }
     goHome() {
       let best = null;
-      for (const e of this.ents.values()) if (e.isB && e.owner === this.me && !e.ghost && (!best || e.type === 'conyard')) best = e;
+      for (const e of this.ents.values()) if (e.isB && e.owner === this.me && !e.ghost && (!best || role(e.def) === 'conyard')) best = e;
       if (best) this.centerOn(best.x, best.y);
     }
 
@@ -439,11 +444,11 @@
     hitEnt(e, sx, sy) {
       const v = this.r.v, P = GA.drawHelpers.P;
       if (e.ghost) return false;
-      if (e.isB) return this.hitBox(e.bx, e.by, e.w, e.h, B_HEIGHT[e.type] || 1, sx, sy);
+      if (e.isB) return this.hitBox(e.bx, e.by, e.w, e.h, B_HEIGHT[e.def.look || e.type] || 1, sx, sy);
       const alt = e.def.fly ? 1.6 : 0;
       const [cx, cy] = P(v, e.rx, e.ry, alt);
       const inf = e.def.cat === 'infantry';
-      const hw = (inf ? 9 : e.def.r * 44 + 8) * v.zoom, hgt = (inf ? 24 : e.type === 'titan' ? 46 : 28) * v.zoom;
+      const hw = (inf ? 9 : e.def.r * 44 + 8) * v.zoom, hgt = (inf ? 24 : (e.def.look || e.type) === 'titan' ? 46 : 28) * v.zoom;
       return sx >= cx - hw && sx <= cx + hw && sy >= cy - hgt && sy <= cy + 6 * v.zoom;
     }
     pick(sx, sy) {
@@ -501,7 +506,7 @@
     orderAt(wx, wy, target, shift, rock = -1) {
       const units = this.selUnits();
       if (!units.length) {
-        const bs = this.selBuildings().filter((b) => b.type === 'barracks' || b.type === 'factory');
+        const bs = this.selBuildings().filter((b) => role(b.def) === 'barracks' || role(b.def) === 'factory');
         for (const b of bs) this.send({ type: 'rally', id: b.id, x: wx, y: wy });
         if (bs.length) { this.mark(wx, wy, 'move'); Audio.play('order', 0.7); }
         return;
@@ -707,7 +712,7 @@
       const e = this.hoverId ? this.ents.get(this.hoverId) : null;
       if (!e) {
         const wx = Math.max(1, Math.min(W - 1, this.mouse.wx)), wy = Math.max(1, Math.min(H - 1, this.mouse.wy));
-        if (this.selUnits().length || this.selBuildings().some((b) => b.type === 'barracks' || b.type === 'factory')) { this.orderAt(wx, wy, null, false, this.hoverRock); return; }
+        if (this.selUnits().length || this.selBuildings().some((b) => role(b.def) === 'barracks' || role(b.def) === 'factory')) { this.orderAt(wx, wy, null, false, this.hoverRock); return; }
       }
       this.drag = { x0: t.x0, y0: t.y0, x1: t.x0, y1: t.y0, active: false };
       this.leftUp(false, dbl);

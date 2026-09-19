@@ -55,21 +55,22 @@
     nextStructure() {
       const p = this.p, c = p.counts, time = this.sim.time, cr = p.credits, lv = this.level;
       const margin = p.pwrProd - p.pwrUse;
+      const on = (t) => { const d = DEFS[t]; return !!d && !d.disabled && d.req.every(on); };    // switched-off structures (and anything that needs them) are skipped
       if (!c.power) return 'power';
       if (margin < 45) return 'power';
       if (!c.refinery) return 'refinery';
-      if (!c.barracks) return 'barracks';
-      if (!c.factory) return 'factory';
+      if (!c.barracks && on('barracks')) return 'barracks';
+      if (!c.factory && on('factory')) return 'factory';
       if (c.refinery < 2 && time > this.lv.delay * 0.5) return 'refinery';
-      if (!c.radar) return 'radar';
+      if (!c.radar && on('radar')) return 'radar';
       const wantTurrets = lv === 'easy' ? 1 : Math.min(6, 1 + Math.floor(time / 220));
-      if ((c.turret || 0) < wantTurrets) return 'turret';
-      if (!c.techlab && (lv !== 'easy' || time > 500)) return 'techlab';
-      if (c.factory < 2 && cr > 2200) return 'factory';
-      if (c.barracks < 2 && cr > 1200) return 'barracks';
+      if ((c.turret || 0) < wantTurrets && on('turret')) return 'turret';
+      if (!c.techlab && (lv !== 'easy' || time > 500) && on('techlab')) return 'techlab';
+      if (c.factory < 2 && cr > 2200 && on('factory')) return 'factory';
+      if (c.barracks < 2 && cr > 1200 && on('barracks')) return 'barracks';
       if (c.refinery < 3 && cr > 2500) return 'refinery';
-      if (c.techlab && !c.uplink && cr > 4500 && lv !== 'easy') return 'uplink';
-      if (cr > 4000 && (c.turret || 0) < 10) return 'turret';
+      if (c.techlab && !c.uplink && cr > 4500 && lv !== 'easy' && on('uplink')) return 'uplink';
+      if (cr > 4000 && (c.turret || 0) < 10 && on('turret')) return 'turret';
       return null;
     }
     placeBuilding(type) {

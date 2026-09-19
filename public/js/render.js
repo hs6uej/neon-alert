@@ -124,7 +124,8 @@
     const bx = e.bx, by = e.by, w = e.w, h = e.h, cx = bx + w / 2, cy = by + h / 2;
     const dark = '#1a2333', mid = '#26334a', light = '#34445f';
     const pulse = 0.5 + 0.5 * Math.sin(t * 3 + e.id);
-    switch (e.type) {
+    const LK = d.look || e.type;
+    switch (LK) {
       case 'conyard': {
         boxA(v, bx, by, w, h, 0, 0.22, dark, '#202b3d');
         boxA(v, bx + 0.25, by + 0.25, w - 0.5, h - 0.5, 0.22, 0.14, mid);
@@ -302,6 +303,14 @@
     }
   }
 
+  // a small gold diamond marks buildings / units made in the admin tools
+  function customMark(v, p) {
+    const ctx = v.ctx, z = v.zoom, s = 4.5 * z;
+    glow(ctx, p[0], p[1], 9 * z, '#facc15', 0.55);
+    ctx.fillStyle = '#facc15'; ctx.strokeStyle = '#3b2f05'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(p[0], p[1] - s); ctx.lineTo(p[0] + s, p[1]); ctx.lineTo(p[0], p[1] + s); ctx.lineTo(p[0] - s, p[1]); ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+
   // ------------------------------------------------------------------ unit art
   function facing(v, a, len) {
     return [(Math.cos(a) - Math.sin(a)) * v.A * len, (Math.cos(a) + Math.sin(a)) * v.B * len];
@@ -315,21 +324,21 @@
     ctx.lineCap = 'round';
     line3(v, [sx - 2 * z, sy - 6 * z], [sx - 2 * z + sw * 3 * z, sy], '#1c2333', 2.6 * z);
     line3(v, [sx + 2 * z, sy - 6 * z], [sx + 2 * z - sw * 3 * z, sy], '#1c2333', 2.6 * z);
-    const suit = e.type === 'engineer' ? '#e8edf5' : shade(col.dark, 1.1);
+    const suit = (e.def.look || e.type) === 'engineer' ? '#e8edf5' : shade(col.dark, 1.1);
     ctx.fillStyle = suit;
     ctx.beginPath(); ctx.roundRect(sx - 4.2 * z, sy - 15 * z - bob, 8.4 * z, 10 * z, 2.5 * z); ctx.fill();
     ctx.fillStyle = col.main; ctx.fillRect(sx - 4.2 * z, sy - 12.5 * z - bob, 8.4 * z, 2.4 * z);
     // head
-    ctx.fillStyle = e.type === 'engineer' ? '#fbbf24' : '#cbd5e1';
+    ctx.fillStyle = (e.def.look || e.type) === 'engineer' ? '#fbbf24' : '#cbd5e1';
     ctx.beginPath(); ctx.arc(sx, sy - 18.5 * z - bob, 3.8 * z, 0, 7); ctx.fill();
-    ctx.fillStyle = e.type === 'engineer' ? '#1f2937' : col.light;
+    ctx.fillStyle = (e.def.look || e.type) === 'engineer' ? '#1f2937' : col.light;
     ctx.fillRect(sx - 2.6 * z, sy - 19.6 * z - bob, 5.2 * z, 1.8 * z);
     const f = facing(v, e.ang, 0.5);
-    if (e.type === 'lancer') {
+    if ((e.def.look || e.type) === 'lancer') {
       const s0 = [sx - f[0] * 0.5, sy - 14 * z - bob - f[1] * 0.5], s1 = [sx + f[0] * 1.6, sy - 15.5 * z - bob + f[1] * 1.6];
       line3(v, s0, s1, '#7f8ea8', 4.4 * z);
       line3(v, s0, s1, col.main, 1.4 * z);
-    } else if (e.type === 'engineer') {
+    } else if ((e.def.look || e.type) === 'engineer') {
       ctx.fillStyle = '#f59e0b'; ctx.fillRect(sx + 3 * z, sy - 9 * z - bob, 5 * z, 4 * z);
     } else {
       line3(v, [sx, sy - 11 * z - bob], [sx + f[0] * 1.5, sy - 11 * z - bob + f[1] * 1.5], '#8b9bb5', 2.4 * z);
@@ -340,7 +349,7 @@
     const ctx = v.ctx, col = PLAYER_COLORS[e.owner] || PLAYER_COLORS[0], z = v.zoom;
     const x = e.rx, y = e.ry, a = e.ang;
     const mv = e.moving;
-    switch (e.type) {
+    switch (e.def.look || e.type) {
       case 'harvester': {
         shadowAt(v, x, y, 26, 12);
         boxR(v, x, y, a, 0.98, 0.72, 0.06, 0.22, '#232e44');
@@ -373,13 +382,13 @@
         boxR(v, x - lx * 0.3, y - ly * 0.3, a, 1.05, 0.2, 0, 0.17, '#141b2a');
         boxR(v, x, y, a, 0.92, 0.5, 0.1, 0.18, '#2b3a58');
         boxR(v, x - c * 0.05, y - s * 0.05, a, 0.7, 0.16, 0.28, 0.03, col.dark, col.main);
-        if (e.type === 'arc') {
+        if ((e.def.look || e.type) === 'arc') {
           boxR(v, x, y, a, 0.5, 0.42, 0.28, 0.17, '#36476a');
           const p0 = P(v, x + c * 0.1, y + s * 0.1, 0.42), p1 = P(v, x + c * 0.78, y + s * 0.78, 0.42);
           line3(v, p0, p1, '#a5b4cf', 4 * z); line3(v, p0, p1, '#5b6d8c', 1.6 * z);
           glow(ctx, p1[0], p1[1], 8 * z, col.main, e.flash > 0 ? 1 : 0.5);
           boxR(v, x - c * 0.05, y - s * 0.05, a, 0.22, 0.2, 0.45, 0.05, col.dark, col.main);
-        } else if (e.type === 'nova') {
+        } else if ((e.def.look || e.type) === 'nova') {
           boxR(v, x - c * 0.12, y - s * 0.12, a, 0.42, 0.4, 0.28, 0.14, '#34435f');
           const p0 = P(v, x - c * 0.2, y - s * 0.2, 0.4), p1 = P(v, x + c * 0.38, y + s * 0.38, 1.05);
           line3(v, p0, p1, '#c3cfe4', 6 * z); line3(v, p0, p1, '#516083', 2.4 * z);
@@ -693,8 +702,9 @@
           clipped = true; bbox = { cx: bot[0], half, cutY };
         }
         if (e.type === 'uplink' || e.type === 'turret') { /* extra state */ }
-        if (e.type === 'uplink') { e.swCharge = g.swCharge; e.swReady = g.swReady && e.owner === g.me; }
+        if (GA.roleOf(e.def) === 'uplink') { e.swCharge = g.swCharge; e.swReady = g.swReady && e.owner === g.me; }
         drawBuilding(v, e, t);
+        if (e.def.custom) customMark(v, P(v, e.x, e.y, ((GA.B_HEIGHT && GA.B_HEIGHT[e.def.look || e.type]) || 1.4) + 0.5));
         if (e.hp < e.mhp * 0.5) {
           const [sx, sy] = P(v, e.x, e.y, 0.6);
           glow(ctx, sx, sy, 22 * v.zoom * (e.hp < e.mhp * 0.25 ? 1.4 : 1), '#ff7a2a', e.hp < e.mhp * 0.25 ? 0.55 + 0.25 * Math.sin(t * 12 + e.id) : 0.2);
@@ -713,6 +723,7 @@
         if (e.def.fly) drawAir(v, e, t);
         else if (e.def.cat === 'infantry') drawInfantry(v, e, t);
         else drawVehicle(v, e, t);
+        if (e.def.custom) customMark(v, P(v, e.rx, e.ry, e.def.fly ? 2.3 : e.def.cat === 'infantry' ? 0.95 : 1.05));
       }
       if (clipped) {
         ctx.restore();
@@ -953,9 +964,9 @@
   // ------------------------------------------------------------------ icons for the build menu
   const iconCache = new Map();
   GA.getIcon = function (type, owner) {
-    const key = type + '|' + (PLAYER_COLORS[owner] ? PLAYER_COLORS[owner].main : owner);
-    if (iconCache.has(key)) return iconCache.get(key);
     const d = DEFS[type];
+    const key = type + '|' + (d.look || '') + '|' + (PLAYER_COLORS[owner] ? PLAYER_COLORS[owner].main : owner);
+    if (iconCache.has(key)) return iconCache.get(key);
     const c = document.createElement('canvas');
     const S = 2;
     c.width = 76 * S; c.height = 56 * S;
@@ -980,6 +991,7 @@
     else if (d.fly) drawAir(v, e, 0.5);
     else if (d.cat === 'infantry') drawInfantry(v, e, 0.5);
     else drawVehicle(v, e, 0.5);
+    if (d.custom) { ctx.fillStyle = '#facc15'; ctx.strokeStyle = '#3b2f05'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(66, 4); ctx.lineTo(71, 10); ctx.lineTo(66, 16); ctx.lineTo(61, 10); ctx.closePath(); ctx.fill(); ctx.stroke(); }
     iconCache.set(key, c);
     return c;
   };

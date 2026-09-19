@@ -207,7 +207,7 @@
         let n = 0;
         for (const it of queue) if (TYPES[it[0]] === type) n++;
         // only what can be built right now (or is already in the queue) is listed
-        const vis = !missing || n > 0;
+        const vis = !d.disabled && (!missing || n > 0);
         if (c.vis !== vis) { c.vis = vis; c.el.style.display = vis ? '' : 'none'; }
         if (vis) shown[d.cat] = true;
         const front = queue[0];
@@ -291,7 +291,7 @@
       if (ents.length === 1 && ents[0].isB) {
         const e = ents[0];
         const f = e.hp / e.mhp;
-        const prodB = e.type === 'barracks' || e.type === 'factory';
+        const prodB = GA.roleOf(e.def) === 'barracks' || GA.roleOf(e.def) === 'factory';
         el.innerHTML = `<div class="one"><div class="nm"></div><div class="hpbar"><i style="width:${Math.floor(f * 100)}%;background:${f > 0.6 ? '#4ade80' : f > 0.3 ? '#facc15' : '#f43f5e'}"></i></div><div class="hp">${Math.floor(e.hp)} / ${e.mhp}</div><div class="desc"></div><div class="desc hint"></div><div class="acts"></div></div>`;
         el.querySelector('.nm').textContent = e.def.name;
         el.querySelector('.desc').textContent = e.def.desc || '';

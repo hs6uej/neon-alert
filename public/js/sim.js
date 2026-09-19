@@ -378,7 +378,7 @@
       this.players.forEach((p, i) => {
         const s = this.starts[i];
         this.addBuilding('conyard', i, s.x - 1, s.y - 1, { instant: true });
-        for (let k = 0; k < 3; k++) {
+        for (let k = 0; k < (DEFS.trooper.disabled ? 0 : 3); k++) {
           const a = k * 2.1 + 0.5;
           const sp = this.nearestPassable(Math.floor(s.x + Math.cos(a) * 3.5), Math.floor(s.y + 2.5 + Math.sin(a) * 2), 6) || [s.x, s.y + 3];
           this.addUnit('trooper', i, sp[0] + 0.5, sp[1] + 0.5);
@@ -391,7 +391,7 @@
         q: { structure: [], infantry: [], vehicle: [] }, counts: {}, pwrProd: 0, pwrUse: 0, income: 0, low: false, alive: false,
         sw: { charge: 0, ready: false }, lastAlert: -99, lastAttacked: null, stats: { kills: 0, lost: 0, built: 0 }, speedMul: 1, incomeMul: 1, hadLow: false,
       });
-      for (const n of m.neutrals || []) this.addBuilding(n.type, this.neutralId, n.x, n.y, { instant: true });
+      for (const n of m.neutrals || []) if (DEFS[n.type] && !DEFS[n.type].disabled) this.addBuilding(n.type, this.neutralId, n.x, n.y, { instant: true });
       this.computeCounts();
       this.players.forEach((p) => { if (p.botLevel) p.bot = new GA.Bot(this, p, p.botLevel); });
     }
@@ -884,7 +884,7 @@
         case 'ret': {
           let ref = null, bd = 1e9;
           for (const b of this.buildings.values()) {
-            if (b.owner !== u.owner || b.type !== 'refinery') continue;
+            if (b.owner !== u.owner || GA.roleOf(b.def) !== 'refinery') continue;
             const dd = (b.x - u.x) ** 2 + (b.y - u.y) ** 2;
             if (dd < bd) { bd = dd; ref = b; }
           }
@@ -1030,6 +1030,7 @@
       for (const b of this.buildings.values()) {
         const p = this.players[b.owner];
         p.counts[b.type] = (p.counts[b.type] || 0) + 1;
+        if (b.def.role && b.def.role !== b.type) p.counts[b.def.role] = (p.counts[b.def.role] || 0) + 1;
         if (!b.def.neutral) p.blds++;
         if (b.def.income) p.income += b.def.income;
         const pw = b.def.power;
@@ -1049,7 +1050,7 @@
     canQueue(pid, type) {
       const def = DEFS[type];
       const p = this.players[pid];
-      if (!def || !p || !p.alive || def.buildable === false) return false;
+      if (!def || !p || !p.alive || def.buildable === false || def.disabled) return false;
       if (!this.hasTech(pid, def)) return false;
       if (def.cat === 'infantry' && !p.counts.barracks) return false;
       if (def.cat === 'vehicle' && !p.counts.factory) return false;
@@ -1100,7 +1101,7 @@
       const def = DEFS[type];
       const need = def.cat === 'infantry' ? 'barracks' : 'factory';
       const prods = [];
-      for (const b of this.buildings.values()) if (b.owner === p.id && b.type === need) prods.push(b);
+      for (const b of this.buildings.values()) if (b.owner === p.id && GA.roleOf(b.def) === need) prods.push(b);
       if (!prods.length) return false;
       const b = prods[(p.rr = ((p.rr || 0) + 1)) % prods.length];
       const sp = this.exitPoint(b, def.fly);
@@ -1194,7 +1195,7 @@
         }
         case 'rally': {
           const b = this.buildings.get(c.id);
-          if (b && b.owner === pid && (b.type === 'barracks' || b.type === 'factory')) {
+          if (b && b.owner === pid && (GA.roleOf(b.def) === 'barracks' || GA.roleOf(b.def) === 'factory')) {
             b.rally = c.clear ? null : { x: Math.max(1, Math.min(W - 1, c.x)), y: Math.max(1, Math.min(H - 1, c.y)) };
           }
           break;
@@ -1229,7 +1230,7 @@
           q.shift();
           const b = this.addBuilding(it.type, pid, x, y);
           p.stats.built++;
-          if (it.type === 'refinery') {
+          if (GA.roleOf(DEFS[it.type]) === 'refinery') {
             const sp = this.exitPoint(b);
             this.addUnit('harvester', pid, sp[0], sp[1], { spawnFx: true });
           }

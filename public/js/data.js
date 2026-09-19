@@ -101,6 +101,9 @@
     mcv: { kind: 'u', name: 'Mobile Nexus', cat: 'vehicle', cost: 2500, time: 26, hp: 900, speed: 2.0, armor: 'heavy', vision: 7, r: 0.6, mcv: true, req: ['radar'], desc: 'Deploys into a new Nexus Core.' },
   };
 
+  // behaviour id of a type: custom copies (made in the admin) keep acting like the type they were made from (production, refining, radar ...)
+  GA.roleOf = (def) => (def && (def.role || def.id)) || '';
+
   GA.TYPES = Object.keys(GA.DEFS);
   GA.TIDX = {};
   GA.TYPES.forEach((t, i) => {

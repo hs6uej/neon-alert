@@ -15,6 +15,14 @@
     GA.BASE.defs[t] = b;
   }
 
+  GA.BUILTIN_TYPES = GA.TYPES.slice();
+  GA.CUSTOM_TYPES = [];
+  GA.CUSTOM_WEAPONS = [];
+  GA.CUSTOM_LIMITS = { types: 24, weapons: 12 };
+  GA.CUSTOM_TYPE_ID = /^x_[a-z0-9]{2,12}$/;
+  GA.CUSTOM_WEAPON_ID = /^w_[a-z0-9]{2,12}$/;
+  // types that cannot be switched off (the game cannot run without them)
+  GA.PROTECTED_TYPES = ['conyard', 'power', 'refinery', 'harvester'];
   const ARMORS = ['inf', 'light', 'heavy', 'bld', 'air'];
   const num = (min, max, step, label, hint) => ({ t: 'num', min, max, step: step || 1, label, hint });
   GA.SCHEMA = {
@@ -84,9 +92,57 @@
 
   // Returns a cleaned copy of `raw` containing only known, in-range values that differ from the defaults.
   GA.cleanConfig = function (raw) {
-    const out = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {} };
+    const out = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [] };
     if (!raw || typeof raw !== 'object') return out;
     const diff = (a, b) => JSON.stringify(a) !== JSON.stringify(b);
+    const rawCustom = raw.custom && typeof raw.custom === 'object' ? raw.custom : {};
+
+    // ---- custom weapons: a copy of a built-in weapon with its own numbers
+    for (const id of Object.keys(rawCustom.weapons || {}).sort().slice(0, GA.CUSTOM_LIMITS.weapons)) {
+      const w = rawCustom.weapons[id];
+      if (!GA.CUSTOM_WEAPON_ID.test(id) || !w || typeof w !== 'object' || !GA.BASE.weapons[w.base]) continue;
+      const clean = { base: w.base };
+      for (const f of Object.keys(GA.SCHEMA.weapons)) {
+        const sc = GA.SCHEMA.weapons[f];
+        const v = w[f] !== undefined ? w[f] : GA.BASE.weapons[w.base][f];
+        const val = v === undefined ? null : sc.t === 'num' ? clampNum(v, sc) : sc.values.includes(v) ? v : null;
+        if (val !== null) clean[f] = val;
+      }
+      if (typeof w.label === 'string') clean.label = w.label.replace(/[<>]/g, '').slice(0, 24);
+      out.custom.weapons[id] = clean;
+    }
+    const weaponIds = Object.keys(GA.BASE.weapons).concat(Object.keys(out.custom.weapons));
+
+    // ---- custom buildings / units: a copy of a built-in type with its own name and numbers
+    const cTypes = {};
+    for (const id of Object.keys(rawCustom.types || {}).sort().slice(0, GA.CUSTOM_LIMITS.types)) {
+      const t = rawCustom.types[id];
+      const bd = t && GA.BASE.defs[t.base] && GA.DEFS[t.base];
+      if (!GA.CUSTOM_TYPE_ID.test(id) || !bd || bd.neutral || t.base === 'conyard') continue;
+      cTypes[id] = { raw: t, kind: bd.kind };
+    }
+    const buildingIds = GA.BUILTIN_TYPES.filter((x) => GA.DEFS[x].kind === 'b' && !GA.DEFS[x].neutral).concat(Object.keys(cTypes).filter((x) => cTypes[x].kind === 'b'));
+    for (const id of Object.keys(cTypes)) {
+      const t = cTypes[id].raw, clean = { base: t.base };
+      for (const f of Object.keys(GA.SCHEMA.defs)) {
+        if (t[f] === undefined) continue;
+        const sc = GA.SCHEMA.defs[f];
+        let val = null;
+        if (sc.t === 'num') val = clampNum(t[f], sc);
+        else if (sc.t === 'str') val = typeof t[f] === 'string' ? t[f].slice(0, sc.max).replace(/[<>]/g, '') : null;
+        else if (f === 'weapon') val = t[f] === '' || weaponIds.includes(t[f]) ? t[f] : null;
+        else if (sc.t === 'enum') val = sc.values.includes(t[f]) ? t[f] : null;
+        else if (sc.t === 'req') {
+          const arr = Array.isArray(t[f]) ? t[f] : String(t[f]).split(',').map((x) => x.trim()).filter(Boolean);
+          val = arr.every((x) => x !== id && buildingIds.includes(x)) ? Array.from(new Set(arr)) : null;
+        }
+        if (val !== null) clean[f] = val;
+      }
+      if (!clean.name || !clean.name.trim()) clean.name = id;
+      out.custom.types[id] = clean;
+    }
+    const allIds = GA.BUILTIN_TYPES.concat(Object.keys(out.custom.types));
+    out.disabled = Array.from(new Set(Array.isArray(raw.disabled) ? raw.disabled : [])).filter((x) => allIds.includes(x) && !GA.PROTECTED_TYPES.includes(x)).sort();
     for (const [t, fields] of Object.entries(raw.defs || {})) {
       if (!GA.BASE.defs[t] || !fields || typeof fields !== 'object') continue;
       const base = GA.BASE.defs[t];
@@ -96,10 +152,11 @@
         let val = null;
         if (sc.t === 'num') val = clampNum(v, sc);
         else if (sc.t === 'str') val = typeof v === 'string' ? v.slice(0, sc.max).replace(/[<>]/g, '') : null;
+        else if (f === 'weapon') val = v === '' || weaponIds.includes(v) ? v : null;
         else if (sc.t === 'enum') val = sc.values.includes(v) ? v : null;
         else if (sc.t === 'req') {
           const arr = Array.isArray(v) ? v : String(v).split(',').map((x) => x.trim()).filter(Boolean);
-          val = arr.every((x) => isBuilding(x)) ? Array.from(new Set(arr)) : null;
+          val = arr.every((x) => isBuilding(x) || buildingIds.includes(x)) ? Array.from(new Set(arr)) : null;
         }
         if (val === null) continue;
         if (t === 'conyard' && (f === 'req')) continue;
@@ -145,7 +202,11 @@
   // Reset everything to the defaults, then apply the (cleaned) overrides. Objects are mutated in place.
   GA.applyConfig = function (raw) {
     const cfg = GA.cleanConfig(raw);
-    for (const t of GA.TYPES) {
+    // forget the previous custom weapons / types first
+    for (const id of GA.CUSTOM_TYPES) delete GA.DEFS[id];
+    for (const id of GA.CUSTOM_WEAPONS) delete GA.WEAPONS[id];
+    GA.CUSTOM_TYPES = []; GA.CUSTOM_WEAPONS = [];
+    for (const t of GA.BUILTIN_TYPES) {
       const d = GA.DEFS[t], b = GA.BASE.defs[t];
       for (const f of DEF_FIELDS) if (b[f] !== undefined) d[f] = clone(b[f]);
       if (b.weapon === undefined) delete d.weapon;
@@ -160,14 +221,36 @@
     for (const [w, r] of Object.entries(cfg.mult)) Object.assign(GA.MULT[w], r);
     for (const [l, r] of Object.entries(cfg.bots)) Object.assign(GA.BOT_LEVELS[l], r);
     Object.assign(GA.SETTINGS, cfg.settings);
+    // custom weapons, then custom types (copies of the possibly edited built-ins they are based on)
+    for (const [id, w] of Object.entries(cfg.custom.weapons)) {
+      const { base, label, ...fields } = w;
+      GA.WEAPONS[id] = Object.assign(clone(GA.WEAPONS[base]), fields);
+      GA.CUSTOM_WEAPONS.push(id);
+    }
+    for (const [id, t] of Object.entries(cfg.custom.types)) {
+      const { base, ...fields } = t, src = GA.DEFS[base], d = clone(src);
+      delete d.wp; delete d.fly; delete d.neutral;
+      Object.assign(d, fields);
+      d.id = id; d.custom = true; d.base = base; d.role = src.role || base; d.look = src.look || base; d.buildable = true;
+      if (!d.weapon) delete d.weapon;
+      GA.DEFS[id] = d;
+      GA.CUSTOM_TYPES.push(id);
+    }
+    // the type table (arrays / objects are updated in place because other modules keep references)
+    GA.TYPES.length = 0;
+    GA.TYPES.push(...GA.BUILTIN_TYPES, ...GA.CUSTOM_TYPES);
+    for (const k of Object.keys(GA.TIDX)) delete GA.TIDX[k];
+    GA.TYPES.forEach((id, i) => { GA.TIDX[id] = i; });
+    const off = new Set(cfg.disabled);
     for (const t of GA.TYPES) {
       const d = GA.DEFS[t];
       d.wp = d.weapon ? GA.WEAPONS[d.weapon] : undefined;
       if (!d.weapon) delete d.weapon;
       if (d.kind === 'u' && d.air) d.fly = true;
+      if (off.has(t)) d.disabled = true; else delete d.disabled;
     }
     GA.CONFIG = cfg;
     return cfg;
   };
-  GA.CONFIG = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {} };
+  GA.CONFIG = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [] };
 })();

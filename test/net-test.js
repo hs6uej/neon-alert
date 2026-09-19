@@ -62,10 +62,12 @@ function client(token) {
     assert.strictEqual(r.status, 403, 'non-admin blocked');
     r = await http('GET', '/api/admin/config', null, '');
     assert.strictEqual(r.status, 401);
-    r = await http('PUT', '/api/admin/config', { config: { defs: { trooper: { cost: 175, hp: 'zzz', bogus: 1 }, nosuch: { cost: 1 } }, settings: { startCredits: 9999, evil: 1 }, weapons: { pulse: { dmg: 12 } } } }, alice);
+    r = await http('PUT', '/api/admin/config', { config: { defs: { trooper: { cost: 175, hp: 'zzz', bogus: 1 }, nosuch: { cost: 1 } }, settings: { startCredits: 9999, evil: 1 }, weapons: { pulse: { dmg: 12 } }, custom: { types: { x_test: { base: 'arc', name: 'Test Tank', hp: 777 }, x_bad: { base: 'conyard', name: 'no' } }, weapons: {} }, disabled: ['nova', 'power', 'nosuch'] } }, alice);
     assert.strictEqual(r.status, 200);
     assert.deepStrictEqual(r.body.config.defs, { trooper: { cost: 175 } }, 'invalid fields dropped');
     assert.strictEqual(r.body.config.settings.startCredits, 9999);
+    assert.deepStrictEqual(Object.keys(r.body.config.custom.types), ['x_test'], 'custom types are validated'); assert.strictEqual(r.body.config.custom.types.x_test.hp, 777);
+    assert.deepStrictEqual(r.body.config.disabled, ['nova'], 'protected / unknown ids cannot be switched off');
     r = await http('GET', '/api/config');
     assert.strictEqual(r.body.config.weapons.pulse.dmg, 12, 'public config exposes overrides');
     r = await http('POST', '/api/admin/users/role', { name: 'Alice', role: 'user' }, alice);
@@ -140,6 +142,7 @@ function client(token) {
     assert.strictEqual(A.start.map.mapId, customId, 'game uses the chosen (custom) map');
     assert.strictEqual(A.start.map.terrain, Buffer.from(GA.terrainDecode(mapBody.terrain)).toString('base64'), 'terrain sent to clients is the saved map');
     assert.strictEqual(A.start.config.settings.startCredits, 9999, 'config sent with start');
+    assert(A.start.config.custom.types.x_test && A.start.config.disabled.includes('nova'), 'custom types and switches are sent with the start message');
     assert(A.snaps > 5 && Bc.snaps > 5, 'snapshots flowing');
     assert.strictEqual(A.last.me.credits, 9999, 'admin start credits applied in sim');
     console.log('ok lobby/colours/start');

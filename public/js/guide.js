@@ -11,7 +11,7 @@
       cost: 'Cost', time: 'Build time', hp: 'Hit points', speed: 'Speed', vision: 'Vision', power: 'Power', armor: 'Armor', builtAt: 'Built at', requires: 'Requires',
       damage: 'Damage', range: 'Range', rate: 'Fire rate', dps: 'Damage / sec', splash: 'Splash radius', targets: 'Targets', capacity: 'Ore capacity', unarmed: 'Unarmed',
       sec: 's', tps: 'tiles/s', tiles: 'tiles', none: 'None (starting building)', noBuild: 'Cannot be built',
-      income: 'Income', bounty: 'Capture bonus', neutral: 'Neutral map structure', captureHow: 'Capture with a Breach Engineer',
+      income: 'Income', bounty: 'Capture bonus', neutral: 'Neutral map structure', captureHow: 'Capture with a Breach Engineer', basedOn: 'Based on', customType: 'Custom',
       ground: 'Ground only', air: 'Air only', both: 'Ground & air',
       inf: 'Infantry', light: 'Light vehicles', heavy: 'Heavy armor', bld: 'Structures', air_: 'Aircraft',
       armorName: { inf: 'Infantry', light: 'Light', heavy: 'Heavy', bld: 'Structure', air: 'Aircraft' },
@@ -22,7 +22,7 @@
       cost: 'ราคา', time: 'เวลาสร้าง', hp: 'พลังชีวิต', speed: 'ความเร็ว', vision: 'ระยะมองเห็น', power: 'ไฟฟ้า', armor: 'เกราะ', builtAt: 'สร้างจาก', requires: 'ต้องมี',
       damage: 'ความเสียหาย', range: 'ระยะยิง', rate: 'ความถี่ยิง', dps: 'ความเสียหาย/วินาที', splash: 'รัศมีระเบิด', targets: 'เป้าหมาย', capacity: 'ความจุแร่', unarmed: 'ไม่มีอาวุธ',
       sec: 'วิ', tps: 'ช่อง/วิ', tiles: 'ช่อง', none: 'ไม่ต้องมี (อาคารตั้งต้น)', noBuild: 'สร้างเองไม่ได้',
-      income: 'รายได้', bounty: 'โบนัสเมื่อยึด', neutral: 'อาคารเป็นกลางบนแผนที่', captureHow: 'ยึดด้วยวิศวกรบุกยึด',
+      income: 'รายได้', bounty: 'โบนัสเมื่อยึด', neutral: 'อาคารเป็นกลางบนแผนที่', captureHow: 'ยึดด้วยวิศวกรบุกยึด', basedOn: 'สร้างจาก', customType: 'สร้างเอง',
       ground: 'พื้นดินเท่านั้น', air: 'อากาศเท่านั้น', both: 'พื้นดินและอากาศ',
       inf: 'ทหารราบ', light: 'ยานเบา', heavy: 'เกราะหนัก', bld: 'อาคาร', air_: 'อากาศยาน',
       armorName: { inf: 'ทหารราบ', light: 'เบา', heavy: 'หนัก', bld: 'อาคาร', air: 'อากาศยาน' },
@@ -444,6 +444,7 @@
     meta.appendChild(el('span', null, GA.tt(GA.CAT_LABEL[d.cat])));
     const at = builtAt(type);
     meta.appendChild(el('span', null, at ? T.builtAt + ': ' + at : d.neutral ? T.neutral : T.noBuild));
+    if (d.custom) meta.appendChild(el('span', null, '★ ' + T.customType + ' · ' + T.basedOn + ': ' + nameOf(d.base)));
     title.appendChild(meta);
     head.appendChild(title);
     host.appendChild(head);
@@ -468,6 +469,7 @@
       host.appendChild(wrap);
     }
 
+    if (!info && d.desc) host.appendChild(section(T.what, el('p', null, GA.tt(d.desc))));
     if (info) {
       host.appendChild(section(T.what, el('p', null, info.what)));
       host.appendChild(section(T.use, el('p', null, info.use)));
@@ -480,7 +482,8 @@
 
   function renderThumbs(host, detail) {
     host.innerHTML = '';
-    const types = GA.TYPES.filter((t) => GA.DEFS[t].cat === state.tab);
+    const types = GA.TYPES.filter((t) => GA.DEFS[t].cat === state.tab && !GA.DEFS[t].disabled);
+    if (!types.length) { host.innerHTML = ''; detail.innerHTML = ''; return; }
     if (!types.includes(state.sel)) state.sel = types[0];
     for (const t of types) {
       const b = el('button', 'gthumb' + (t === state.sel ? ' on' : ''));

@@ -7,7 +7,7 @@
   let token = null;
   try { token = localStorage.getItem('ga.token'); } catch (e) { /* ignore */ }
   let me = null;
-  let cfg = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {} }; // working overrides
+  let cfg = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [] }; // working overrides
   let saved = '';
   let tab = 'structures';
   let roomTimer = null;
@@ -30,17 +30,27 @@
 
   // ---------------------------------------------------------------- value helpers
   function baseOf(section, key, field) {
+    if (section === 'ctype') return baseOf('defs', cfg.custom.types[key].base, field);
+    if (section === 'cweapon') { const v = B.weapons[cfg.custom.weapons[key].base][field]; return v === undefined ? (field === 'splash' ? 0 : v) : v; }
     if (section === 'mult') return B.mult[key][field];
     if (section === 'settings') return B.settings[key];
     const v = B[section][key][field];
     return v === undefined ? (field === 'weapon' ? '' : field === 'splash' ? 0 : v) : v;
   }
   function cur(section, key, field) {
+    if (section === 'ctype' || section === 'cweapon') { const v = (section === 'ctype' ? cfg.custom.types : cfg.custom.weapons)[key][field]; return v !== undefined ? v : baseOf(section, key, field); }
     const o = section === 'settings' ? cfg.settings : (cfg[section][key] || {});
     const v = section === 'settings' ? o[key] : o[field];
     return v === undefined ? baseOf(section, key, field) : v;
   }
   function setVal(section, key, field, v) {
+    if (section === 'ctype' || section === 'cweapon') {
+      const o = (section === 'ctype' ? cfg.custom.types : cfg.custom.weapons)[key];
+      o[field] = v;
+      if (field !== 'name' && JSON.stringify(v) === JSON.stringify(baseOf(section, key, field))) delete o[field];
+      GA.applyConfig(cfg);
+      return;
+    }
     if (section === 'settings') { cfg.settings[key] = v; if (v === B.settings[key]) delete cfg.settings[key]; return; }
     const o = (cfg[section][key] = cfg[section][key] || {});
     o[field] = v;
@@ -55,7 +65,11 @@
     if (sc.t === 'num') input = el('input', { type: 'number', min: sc.min, max: sc.max, step: sc.step, value });
     else if (sc.t === 'str') input = el('input', { type: 'text', maxlength: sc.max, value });
     else if (sc.t === 'req') input = el('input', { type: 'text', value: (value || []).join(', '), placeholder: 'none' });
-    else { input = el('select', {}, sc.values.map((v) => el('option', { value: v }, v === '' ? '(none)' : v))); input.value = value; }
+    else {
+      const values = f === 'weapon' ? [''].concat(Object.keys(GA.WEAPONS)) : sc.values;
+      input = el('select', {}, values.map((v) => el('option', { value: v }, v === '' ? '(none)' : v)));
+      input.value = value;
+    }
     const wrap = el('label', { class: (sc.t === 'str' || sc.t === 'req' ? 'wide ' : '') + (isMod(section, key, f) ? 'mod' : ''), title: 'Default: ' + JSON.stringify(baseOf(section, key, f)) }, label || sc.label || f, input);
     input.onchange = () => {
       let v = input.value;
@@ -73,7 +87,7 @@
     return wrap;
   }
   function cardMod(section, key) {
-    if (section === 'settings') return false;
+    if (section === 'settings' || section === 'ctype' || section === 'cweapon') return false;
     return !!(cfg[section][key] && Object.keys(cfg[section][key]).length);
   }
   function resetBtn(section, key, rerender) {
@@ -81,46 +95,134 @@
   }
 
   // ---------------------------------------------------------------- views
-  function defCards(kind) {
+  // ---- pictures, on/off switch and the "create new" tools for buildings / units
+  const isOff = (t) => cfg.disabled.includes(t);
+  const iconEl = (type) => {
+    const c = el('canvas', { width: 152, height: 112 });
+    try { c.getContext('2d').drawImage(GA.getIcon(type, 0), 0, 0); } catch (e) { /* decorative */ }
+    return c;
+  };
+  const blocked = (t, depth = 0) => { const d = GA.DEFS[t]; return !!d && depth < 8 && (d.req || []).some((r) => GA.DEFS[r] && (GA.DEFS[r].disabled || blocked(r, depth + 1))); };
+  const slug = (name, prefix, taken) => {
+    let base = String(name).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 9) || 'new', id = prefix + base, n = 2;
+    while (taken(id)) id = prefix + base.slice(0, 9 - String(n).length) + n++;
+    return id;
+  };
+  function typeCard(t, kind, rerender) {
+    const d = GA.DEFS[t], custom = !!d.custom, prot = GA.PROTECTED_TYPES.includes(t), off = isOff(t);
+    const card = el('div', { class: 'card' + (custom ? ' custom' : '') + (off ? ' off' : '') + (!custom && cardMod('defs', t) ? ' mod' : ''), id: 'tc_' + t });
+    const tags = el('div', { class: 'tags' });
+    if (custom) tags.append(el('span', { class: 'tag gold' }, '★ CUSTOM'), el('span', { class: 'tag' }, 'based on ' + GA.BASE.defs[d.base].name));
+    if (off) tags.append(el('span', { class: 'tag red' }, 'SWITCHED OFF'));
+    else if (blocked(t)) tags.append(el('span', { class: 'tag red' }, 'NEEDS A SWITCHED-OFF BUILDING'));
+    const toggle = el('input', { type: 'checkbox' });
+    toggle.checked = !off; toggle.disabled = prot;
+    toggle.onchange = () => {
+      cfg.disabled = cfg.disabled.filter((x) => x !== t);
+      if (!toggle.checked) cfg.disabled.push(t);
+      GA.applyConfig(cfg); refreshDirty(); rerender();
+    };
+    const head = el('div', { class: 'thead' }, iconEl(t),
+      el('div', { class: 'tt' }, el('h3', {}, custom ? cfg.custom.types[t].name : GA.BASE.defs[t].name, el('small', {}, t)), tags),
+      el('label', { class: 'toggle', title: prot ? 'The game cannot run without this - it always stays on.' : 'Off = it never appears on the battlefield (cannot be built or trained; bots skip it).' }, toggle, 'In battle'));
+    card.append(head);
+    if (custom) card.querySelector('h3').append(el('button', { class: 'danger', style: 'margin-left:auto;padding:2px 9px;font-size:11px', onclick: () => {
+      if (!confirm(GA.tt(`Delete "${cfg.custom.types[t].name}"?`))) return;
+      delete cfg.custom.types[t]; cfg.disabled = cfg.disabled.filter((x) => x !== t);
+      GA.applyConfig(cfg); refreshDirty(); rerender();
+    } }, 'Delete'));
+    else card.querySelector('h3').append(resetBtn('defs', t, () => { GA.applyConfig(cfg); rerender(); }));
+    const fields = el('div', { class: 'fields' });
+    const list = kind === 'b'
+      ? ['name', 'cost', 'time', 'hp', 'power', 'vision', 'armor', 'weapon', 'income', 'bounty', 'req', 'desc']
+      : ['name', 'cost', 'time', 'hp', 'speed', 'vision', 'armor', 'weapon', 'capacity', 'req', 'desc'];
+    for (const f of list) {
+      if (f === 'capacity' && !d.harvester) continue;
+      if ((f === 'income' || f === 'bounty') && d[f] === undefined) continue;
+      if (f === 'time' && t === 'conyard') continue;
+      if (f === 'req' && t === 'conyard') continue;
+      fields.append(field(custom ? 'ctype' : 'defs', t, f, S.defs[f]));
+    }
+    card.append(fields);
+    return card;
+  }
+  function defCards(kind, focus) {
     const view = $('view');
     view.innerHTML = '';
-    view.append(el('p', { class: 'note' }, kind === 'b' ? 'Structures. Yellow fields differ from the built-in defaults (hover a field to see the default). "Requires" is a comma separated list of building ids.' : 'Units. Speed is in tiles per second; build time is in seconds at full power.'));
+    GA.applyConfig(cfg);
+    const noun = kind === 'b' ? 'building' : 'unit';
+    view.append(el('p', { class: 'note' }, kind === 'b'
+      ? 'Structures. The picture is what the game draws. Untick "In battle" to keep a building off the battlefield, or create your own building as a copy of an existing one (it acts like the original: a copy of the Barracks trains infantry, a copy of the Ore Processor refines ore, ...). Yellow fields differ from the built-in defaults (hover a field to see the default). "Requires" is a comma separated list of building ids.'
+      : 'Units. The picture is what the game draws. Untick "In battle" to keep a unit off the battlefield, or create your own unit as a copy of an existing one with its own name, stats and weapon. Speed is in tiles per second; build time is in seconds at full power.'));
+    const rerender = () => defCards(kind);
+    const types = GA.TYPES.filter((t) => GA.DEFS[t].kind === kind);
+    const offCount = types.filter((t) => isOff(t)).length;
+
+    // ---- create box
+    const bases = GA.BUILTIN_TYPES.filter((t) => GA.DEFS[t].kind === kind && !GA.DEFS[t].neutral && t !== 'conyard');
+    const baseSel = el('select', {}, bases.map((t) => el('option', { value: t }, GA.BASE.defs[t].name)));
+    const nameIn = el('input', { type: 'text', maxlength: 24, placeholder: kind === 'b' ? 'e.g. Field Barracks' : 'e.g. Storm Tank' });
+    let pic = iconEl(baseSel.value);
+    baseSel.onchange = () => { const n = iconEl(baseSel.value); pic.replaceWith(n); pic = n; };
+    const create = () => {
+      const name = nameIn.value.trim();
+      if (name.length < 2) { msg('Give it a name first.', 'err'); nameIn.focus(); return; }
+      if (Object.keys(cfg.custom.types).length >= GA.CUSTOM_LIMITS.types) { msg(`At most ${GA.CUSTOM_LIMITS.types} custom buildings / units.`, 'err'); return; }
+      const id = slug(name, 'x_', (x) => !!cfg.custom.types[x] || !!GA.DEFS[x]);
+      cfg.custom.types[id] = { base: baseSel.value, name };
+      refreshDirty(); defCards(kind, id);
+    };
+    const box = el('div', { class: 'newbox hidden' },
+      el('h3', { style: 'margin:0 0 10px;font-size:14px;color:var(--amber)' }, kind === 'b' ? 'New building' : 'New unit'),
+      el('div', { class: 'row' }, pic, el('label', {}, 'Based on (copies its look, abilities and stats)', baseSel), el('label', {}, 'Name', nameIn), el('button', { class: 'primary', onclick: create }, 'Create')));
+    nameIn.onkeydown = (e) => { if (e.key === 'Enter') create(); };
+    view.append(el('div', { class: 'toolbar' },
+      el('button', { class: 'primary', onclick: () => { box.classList.toggle('hidden'); nameIn.focus(); } }, kind === 'b' ? '＋ New building' : '＋ New unit'),
+      el('button', { class: 'ghost', onclick: () => { cfg.disabled = cfg.disabled.filter((x) => !GA.DEFS[x] || GA.DEFS[x].kind !== kind); GA.applyConfig(cfg); refreshDirty(); rerender(); } }, 'Switch everything on'),
+      el('span', { class: 'sp' }), el('span', { class: 'note', style: 'margin:0' }, `${types.length - offCount} / ${types.length} ${noun}s in battle`)), box);
+
     const grid = el('div', { class: 'grid' });
-    for (const t of GA.TYPES) {
-      const d = GA.DEFS[t];
-      if (d.kind !== kind) continue;
-      const card = el('div', { class: 'card' + (cardMod('defs', t) ? ' mod' : '') });
-      card.append(el('h3', {}, GA.BASE.defs[t].name, el('small', {}, t), resetBtn('defs', t, () => defCards(kind))));
-      const fields = el('div', { class: 'fields' });
-      const list = kind === 'b'
-        ? ['name', 'cost', 'time', 'hp', 'power', 'vision', 'armor', 'weapon', 'income', 'bounty', 'req', 'desc']
-        : ['name', 'cost', 'time', 'hp', 'speed', 'vision', 'armor', 'weapon', 'capacity', 'req', 'desc'];
-      for (const f of list) {
-        if (f === 'capacity' && !d.harvester) continue;
-        if ((f === 'income' || f === 'bounty') && d[f] === undefined) continue;
-        if (f === 'time' && t === 'conyard') continue;
-        if (f === 'req' && t === 'conyard') continue;
-        fields.append(field('defs', t, f, S.defs[f]));
-      }
-      card.append(fields);
-      grid.append(card);
-    }
+    for (const t of types) grid.append(typeCard(t, kind, rerender));
     view.append(grid);
+    if (focus) { const c = $('tc_' + focus); if (c) { c.scrollIntoView({ block: 'center' }); c.classList.add('mod'); } }
   }
-  function weaponView() {
+  function weaponView(focus) {
     const view = $('view'); view.innerHTML = '';
+    GA.applyConfig(cfg);
     const users = {};
-    for (const t of GA.TYPES) { const w = GA.BASE.defs[t].weapon; if (w) (users[w] = users[w] || []).push(GA.BASE.defs[t].name); }
-    view.append(el('p', { class: 'note' }, 'Weapons. Damage class decides which armor multipliers apply (see "Armor" tab). Set a unit\'s weapon on the Units / Structures tab. Projectile speed 0 = instant beam.'));
+    for (const t of GA.TYPES) { const w = GA.DEFS[t].weapon; if (w) (users[w] = users[w] || []).push(GA.DEFS[t].name); }
+    view.append(el('p', { class: 'note' }, 'Weapons. Damage class decides which armor multipliers apply (see "Armor" tab). Set a unit\'s weapon on the Units / Structures tab - your own weapons show up in that list too. Projectile speed 0 = instant beam.'));
+    const baseSel = el('select', {}, Object.keys(B.weapons).map((k) => el('option', { value: k }, k)));
+    const labelIn = el('input', { type: 'text', maxlength: 24, placeholder: 'e.g. Storm cannon' });
+    const create = () => {
+      const name = labelIn.value.trim();
+      if (name.length < 2) { msg('Give it a name first.', 'err'); labelIn.focus(); return; }
+      if (Object.keys(cfg.custom.weapons).length >= GA.CUSTOM_LIMITS.weapons) { msg(`At most ${GA.CUSTOM_LIMITS.weapons} custom weapons.`, 'err'); return; }
+      const id = slug(name, 'w_', (x) => !!cfg.custom.weapons[x] || !!GA.WEAPONS[x]);
+      cfg.custom.weapons[id] = { base: baseSel.value, label: name };
+      refreshDirty(); weaponView(id);
+    };
+    labelIn.onkeydown = (e) => { if (e.key === 'Enter') create(); };
+    const box = el('div', { class: 'newbox hidden' }, el('h3', { style: 'margin:0 0 10px;font-size:14px;color:var(--amber)' }, 'New weapon'),
+      el('div', { class: 'row' }, el('label', {}, 'Based on', baseSel), el('label', {}, 'Name', labelIn), el('button', { class: 'primary', onclick: create }, 'Create')));
+    view.append(el('div', { class: 'toolbar' }, el('button', { class: 'primary', onclick: () => { box.classList.toggle('hidden'); labelIn.focus(); } }, '＋ New weapon')), box);
     const grid = el('div', { class: 'grid' });
     for (const k of Object.keys(GA.WEAPONS)) {
-      const card = el('div', { class: 'card' + (cardMod('weapons', k) ? ' mod' : '') });
-      card.append(el('h3', {}, k, el('small', {}, (users[k] || ['(unused)']).join(', ')), resetBtn('weapons', k, weaponView)));
+      const custom = !!cfg.custom.weapons[k], sec = custom ? 'cweapon' : 'weapons';
+      const card = el('div', { class: 'card' + (custom ? ' custom' : '') + (!custom && cardMod('weapons', k) ? ' mod' : ''), id: 'wc_' + k });
+      const title = el('h3', {}, custom ? (cfg.custom.weapons[k].label || k) : k, el('small', {}, (users[k] || ['(unused)']).join(', ')));
+      if (custom) title.append(el('button', { class: 'danger', style: 'margin-left:auto;padding:2px 9px;font-size:11px', onclick: () => {
+        if (!confirm(GA.tt(`Delete weapon "${cfg.custom.weapons[k].label || k}"? Units using it fall back to their original weapon.`))) return;
+        delete cfg.custom.weapons[k]; GA.applyConfig(cfg); refreshDirty(); weaponView();
+      } }, 'Delete'));
+      else title.append(resetBtn('weapons', k, weaponView));
+      card.append(title);
       const fields = el('div', { class: 'fields' });
-      for (const f of ['dmg', 'cd', 'range', 'splash', 'speed', 'wtype', 'targets', 'proj']) fields.append(field('weapons', k, f, S.weapons[f]));
+      for (const f of ['dmg', 'cd', 'range', 'splash', 'speed', 'wtype', 'targets', 'proj']) fields.append(field(sec, k, f, S.weapons[f]));
       card.append(fields); grid.append(card);
     }
     view.append(grid);
+    if (focus) { const c = $('wc_' + focus); if (c) { c.scrollIntoView({ block: 'center' }); c.classList.add('mod'); } }
   }
   function multView() {
     const view = $('view'); view.innerHTML = '';
@@ -293,6 +395,7 @@
   function load(config) {
     cfg = JSON.parse(JSON.stringify(GA.cleanConfig(config)));
     saved = JSON.stringify(GA.cleanConfig(cfg));
+    GA.applyConfig(cfg);
   }
   $('btnSave').onclick = async () => {
     try {
@@ -302,7 +405,7 @@
       msg(j.appliedNow ? 'Saved. New games use these values.' : 'Saved. A game is running - values apply when it ends (new rooms started while idle).', 'ok');
     } catch (e) { msg(e.message, 'err'); }
   };
-  $('btnDiscard').onclick = () => { cfg = JSON.parse(saved); showTab(tab); msg('Edits discarded.'); };
+  $('btnDiscard').onclick = () => { cfg = JSON.parse(saved); GA.applyConfig(cfg); showTab(tab); msg('Edits discarded.'); };
   $('btnReset').onclick = async () => {
     if (!confirm(GA.tt('Reset EVERY value to the built-in defaults from data.js?'))) return;
     try { const j = await api('/api/admin/config/reset', 'POST'); load(j.config); showTab(tab); msg('All values reset to defaults.', 'ok'); } catch (e) { msg(e.message, 'err'); }

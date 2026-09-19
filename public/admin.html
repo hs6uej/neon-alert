@@ -43,6 +43,17 @@
   html[lang="th"] * { letter-spacing:0 !important; }
   body { font-family:'Segoe UI','Leelawadee UI','Noto Sans Thai',Tahoma,system-ui,sans-serif; }
   .hidden { display:none !important; }
+  .thead { display:flex; align-items:center; gap:12px; margin-bottom:10px; }
+  .thead canvas { width:76px; height:56px; flex:none; border-radius:8px; background:radial-gradient(ellipse at 50% 65%, rgba(34,211,238,.13), rgba(4,9,16,.9) 70%); border:1px solid rgba(127,147,173,.2); }
+  .thead .tt { min-width:0; flex:1; } .thead .tt h3 { margin:0; font-size:14px; color:var(--green); display:flex; align-items:center; gap:6px; flex-wrap:wrap; } .thead .tt h3 small { color:var(--muted); font-weight:400; font-size:11px; }
+  .thead .tags { display:flex; gap:5px; flex-wrap:wrap; margin-top:5px; }
+  .tag { font-size:10px; letter-spacing:.06em; padding:2px 7px; border-radius:10px; border:1px solid rgba(127,147,173,.35); color:var(--muted); } .tag.gold { border-color:rgba(250,204,21,.6); color:var(--amber); } .tag.red { border-color:rgba(255,77,109,.6); color:#ffb4c0; }
+  label.toggle { flex-direction:row; align-items:center; gap:7px; text-transform:none; letter-spacing:normal; font-size:12px; color:var(--text); white-space:nowrap; cursor:pointer; } label.toggle input { width:auto; }
+  .card.off { opacity:.62; border-style:dashed; } .card.off .thead canvas { filter:grayscale(1); }
+  .card.custom { border-color:rgba(250,204,21,.35); }
+  .newbox { background:var(--panel); border:1px dashed rgba(250,204,21,.5); border-radius:12px; padding:14px; margin-bottom:16px; }
+  .newbox .row { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; } .newbox .row > label { flex:1; min-width:170px; } .newbox canvas { width:76px; height:56px; border-radius:8px; background:#050a12; border:1px solid rgba(127,147,173,.2); }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; } .toolbar .sp { flex:1; }
 </style>
 </head>
 <body>
@@ -72,6 +83,7 @@
 <script src="js/config.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/sim.js"></script>
+<script src="js/render.js"></script>
 <script src="js/mapeditor.js"></script>
 <script src="js/admin.js"></script>
 </body>
