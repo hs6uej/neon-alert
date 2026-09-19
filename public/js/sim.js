@@ -122,6 +122,15 @@
   GA.MAP_SEEDS = { crossroads: 11, isles: 23, highlands: 5 };
 
   function genMap(seed, mapId) {
+    const custom = GA.CUSTOM_MAPS && GA.CUSTOM_MAPS[mapId] && GA.customMapData(GA.CUSTOM_MAPS[mapId]);
+    if (custom) {
+      const crnd = mulberry32(seed), starts = custom.starts;
+      for (let i = starts.length - 1; i > 0; i--) {
+        const j = Math.floor(crnd() * (i + 1));
+        [starts[i], starts[j]] = [starts[j], starts[i]];
+      }
+      return { terrain: custom.terrain, ore: custom.ore, starts, mapId, neutrals: custom.neutrals };
+    }
     if (mapId === 'any') mapId = GA.MAP_IDS[Math.abs(seed | 0) % GA.MAP_IDS.length];
     if (!BUILDERS[mapId]) mapId = 'random';
     const rnd = mulberry32(seed);

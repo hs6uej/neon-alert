@@ -72,6 +72,28 @@ function client(token) {
     assert.strictEqual(r.status, 400, 'cannot demote last admin');
     console.log('ok admin config');
 
+    // --- custom maps: admin only, validated, published through /api/config
+    require('../public/js/data.js'); require('../public/js/mapdata.js'); require('../public/js/config.js'); require('../public/js/sim.js');
+    const GA = globalThis.GA;
+    const gen = GA.genMap(3, 'crossroads');
+    const mapBody = { name: 'Net Test Map', desc: 'made by the test', terrain: GA.terrainEncode(gen.terrain), ore: GA.oreEncode(gen.ore), starts: gen.starts.map((p) => [p.x, p.y]), neutrals: gen.neutrals };
+    r = await http('PUT', '/api/admin/maps', { map: mapBody }, bob);
+    assert.strictEqual(r.status, 403, 'non-admin cannot save maps');
+    r = await http('PUT', '/api/admin/maps', { map: { ...mapBody, starts: [[5, 5], [6, 6], [7, 7]] } }, alice);
+    assert.strictEqual(r.status, 400, 'invalid map rejected'); assert(r.body.errors.length > 0 && /Start 1/.test(r.body.error), 'errors reported: ' + r.body.error);
+    r = await http('PUT', '/api/admin/maps', { map: { ...mapBody, id: 'c_nosuchid' } }, alice);
+    assert.strictEqual(r.status, 404, 'unknown id');
+    r = await http('PUT', '/api/admin/maps', { map: mapBody }, alice);
+    assert.strictEqual(r.status, 200); const customId = r.body.map.id;
+    assert(GA.CUSTOM_MAP_ID.test(customId), 'generated id ' + customId);
+    r = await http('PUT', '/api/admin/maps', { map: { ...mapBody, id: customId, name: 'Net Test Map v2' } }, alice);
+    assert.strictEqual(r.status, 200); assert.strictEqual(r.body.map.id, customId, 'update keeps the id'); assert.strictEqual(r.body.maps.length, 1);
+    r = await http('GET', '/api/config');
+    assert.strictEqual(r.body.maps.length, 1); assert.strictEqual(r.body.maps[0].name, 'Net Test Map v2'); assert(!('by' in r.body.maps[0]), 'no admin metadata leaked');
+    r = await http('GET', '/api/admin/maps', null, bob);
+    assert.strictEqual(r.status, 403);
+    console.log('ok custom maps api');
+
     // --- lobby + rooms + colours
     const A = await client(alice), Bc = await client(bob);
     await sleep(300);
@@ -94,6 +116,9 @@ function client(token) {
     A.send({ t: 'map', id: 'bogus' });
     await sleep(200);
     assert.strictEqual(A.room.map, 'isles', 'host picks the map; invalid ids and guests are ignored');
+    A.send({ t: 'map', id: customId });
+    await sleep(200);
+    assert.strictEqual(A.room.map, customId, 'host can pick a custom map');
     A.send({ t: 'color', i: 0, color: 7 });
     A.send({ t: 'speed', speed: 2 });
     await sleep(200);
@@ -104,11 +129,19 @@ function client(token) {
     assert.deepStrictEqual(A.start.map.players.filter((p) => !p.neutral).map((p) => p.color), [7, 5, 2]);
     assert.strictEqual(A.start.map.players.filter((p) => p.neutral).length, 1, 'start info carries the neutral owner of map structures');
     assert.deepStrictEqual(A.start.map.players.map((p) => p.name).slice(0, 2), ['Alice', 'Bob']);
-    assert.strictEqual(A.start.map.mapId, 'isles', 'game uses the chosen map');
+    assert.strictEqual(A.start.map.mapId, customId, 'game uses the chosen (custom) map');
+    assert.strictEqual(A.start.map.terrain, Buffer.from(GA.terrainDecode(mapBody.terrain)).toString('base64'), 'terrain sent to clients is the saved map');
     assert.strictEqual(A.start.config.settings.startCredits, 9999, 'config sent with start');
     assert(A.snaps > 5 && Bc.snaps > 5, 'snapshots flowing');
     assert.strictEqual(A.last.me.credits, 9999, 'admin start credits applied in sim');
     console.log('ok lobby/colours/start');
+    r = await http('POST', '/api/admin/maps/delete', { id: customId }, bob);
+    assert.strictEqual(r.status, 403);
+    r = await http('POST', '/api/admin/maps/delete', { id: customId }, alice);
+    assert.strictEqual(r.status, 200); assert.strictEqual(r.body.maps.length, 0);
+    r = await http('GET', '/api/config');
+    assert.strictEqual(r.body.maps.length, 0, 'deleted map no longer published');
+    console.log('ok custom maps delete');
 
     // --- in game: command works, chat, disconnect -> AI, stats
     A.send({ t: 'cmd', c: { type: 'queue', item: 'power' } });

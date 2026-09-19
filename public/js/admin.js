@@ -197,7 +197,7 @@
   }
 
   // ---------------------------------------------------------------- sign-in logs
-  const LOG_EVENTS = ['login', 'login_failed', 'login_blocked', 'register', 'logout', 'session_replaced', 'password_reset', 'role_change', 'stats_reset', 'account_deleted', 'config_saved', 'config_reset', 'room_closed'];
+  const LOG_EVENTS = ['login', 'login_failed', 'login_blocked', 'register', 'logout', 'session_replaced', 'password_reset', 'role_change', 'stats_reset', 'account_deleted', 'config_saved', 'config_reset', 'map_saved', 'map_deleted', 'room_closed'];
   const logState = { event: '', user: '', q: '', ok: '', rows: [], done: false };
   function device(ua) {
     const b = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : /curl|node|python|axios/i.test(ua) ? 'script' : ua ? 'Browser' : '—';
@@ -275,6 +275,7 @@
   const TABS = [
     ['structures', 'Structures', () => defCards('b')], ['units', 'Units', () => defCards('u')], ['weapons', 'Weapons', weaponView],
     ['armor', 'Armor', multView], ['bots', 'Bot AI', botView], ['settings', 'Rules', settingsView],
+    ['maps', 'Maps', () => GA.mapEditorView($('view'), api)],
     ['users', 'Users', usersView], ['logs', 'Sign-in logs', logsView], ['matches', 'Matches', matchesView], ['rooms', 'Rooms', roomsView],
   ];
   function showTab(id) {
@@ -283,7 +284,7 @@
     for (const b of $('tabs').children) b.classList.toggle('active', b.dataset.id === id);
     TABS.find((t) => t[0] === id)[2]();
     if (id === 'rooms') roomTimer = setInterval(roomsView, 4000);
-    $('bar').classList.toggle('hidden', ['users', 'rooms', 'logs', 'matches'].includes(id));
+    $('bar').classList.toggle('hidden', ['maps', 'users', 'rooms', 'logs', 'matches'].includes(id));
   }
   function buildTabs() {
     $('tabs').innerHTML = '';
@@ -306,7 +307,7 @@
     if (!confirm(GA.tt('Reset EVERY value to the built-in defaults from data.js?'))) return;
     try { const j = await api('/api/admin/config/reset', 'POST'); load(j.config); showTab(tab); msg('All values reset to defaults.', 'ok'); } catch (e) { msg(e.message, 'err'); }
   };
-  window.addEventListener('beforeunload', (e) => { if (dirty()) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', (e) => { if (dirty() || (GA.mapEditorDirty && GA.mapEditorDirty())) { e.preventDefault(); e.returnValue = ''; } });
 
   (async function boot() {
     const gate = (title, text) => { $('gateTitle').textContent = title; $('gateMsg').textContent = text; $('gate').classList.remove('hidden'); };

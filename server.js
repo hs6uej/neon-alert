@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 require('./public/js/data.js');
+require('./public/js/mapdata.js');
 require('./public/js/config.js');
 require('./public/js/sim.js');
 require('./public/js/ai.js');
@@ -162,6 +163,16 @@ function eloDeltas(humans) {
 }
 
 // ------------------------------------------------------------------ admin-editable game configuration
+// ---- custom maps made in the admin map editor (data/maps.json)
+let savedMaps = [];
+for (const m of readJson('maps.json', { maps: [] }).maps || []) {
+  const v = GA.validateMap(m);
+  if (GA.CUSTOM_MAP_ID.test(m.id) && !v.errors.length) savedMaps.push({ id: m.id, ...v.map, by: m.by || '', t: m.t || 0 });
+}
+GA.setCustomMaps(savedMaps);
+const publicMaps = () => savedMaps.map(({ id, name, desc, terrain, ore, starts, neutrals }) => ({ id, name, desc, terrain, ore, starts, neutrals }));
+const saveMaps = () => { GA.setCustomMaps(savedMaps); writeJson('maps.json', { maps: savedMaps }); };
+
 let savedConfig = GA.cleanConfig(readJson('config.json', {}));
 GA.applyConfig(savedConfig);
 const rooms = new Map();
@@ -219,7 +230,7 @@ async function handleApi(req, res, url) {
   const query = new URLSearchParams((req.url.split('?')[1]) || '');
   try {
     if (url === '/api/info' && m === 'GET') return json(res, 200, { ips: lanAddresses(), port: PORT });
-    if (url === '/api/config' && m === 'GET') return json(res, 200, { config: savedConfig });
+    if (url === '/api/config' && m === 'GET') return json(res, 200, { config: savedConfig, maps: publicMaps() });
 
     if (url === '/api/register' && m === 'POST') {
       const b = await readBody(req, 4096);
@@ -373,6 +384,35 @@ async function handleApi(req, res, url) {
         logEvent('room_closed', { user: me.name, ip, ua, note: r.code });
         r.close('Closed by an admin');
         return json(res, 200, { ok: true });
+      }
+      if (url === '/api/admin/maps' && m === 'GET') return json(res, 200, { maps: savedMaps, limit: GA.MAP_LIMITS.maxMaps });
+      if (url === '/api/admin/maps' && m === 'PUT') {
+        const b = await readBody(req, 600 * 1024);
+        const raw = b.map || {};
+        const v = GA.validateMap(raw);
+        const fmt = (list) => list.map((x) => (x.v ? x.k.replace(/\{(\w+)\}/g, (mm, k) => (x.v[k] != null ? x.v[k] : mm)) : x.k));
+        if (v.errors.length) return json(res, 400, { error: fmt(v.errors).join('; '), errors: v.errors, warnings: v.warnings });
+        let entry = raw.id ? savedMaps.find((x) => x.id === raw.id) : null;
+        if (raw.id && !entry) return json(res, 404, { error: 'No such map' });
+        if (!entry) {
+          if (savedMaps.length >= GA.MAP_LIMITS.maxMaps) return json(res, 400, { error: `At most ${GA.MAP_LIMITS.maxMaps} custom maps` });
+          let id; do { id = 'c_' + crypto.randomBytes(4).toString('hex'); } while (savedMaps.some((x) => x.id === id));
+          entry = { id };
+          savedMaps.push(entry);
+        }
+        Object.assign(entry, v.map, { by: me.name, t: Date.now() });
+        saveMaps();
+        logEvent('map_saved', { user: me.name, ip, ua, note: entry.name + ' (' + entry.id + ')' });
+        return json(res, 200, { map: entry, maps: savedMaps, warnings: v.warnings });
+      }
+      if (url === '/api/admin/maps/delete' && m === 'POST') {
+        const b = await readBody(req, 1024);
+        const i = savedMaps.findIndex((x) => x.id === b.id);
+        if (i < 0) return json(res, 404, { error: 'No such map' });
+        const [gone] = savedMaps.splice(i, 1);
+        saveMaps();
+        logEvent('map_deleted', { user: me.name, ip, ua, note: gone.name + ' (' + gone.id + ')' });
+        return json(res, 200, { maps: savedMaps });
       }
       if (url === '/api/admin/config' && m === 'GET') return json(res, 200, { config: savedConfig, applied: GA.CONFIG, playing: anyPlaying() });
       if (url === '/api/admin/config' && m === 'PUT') {

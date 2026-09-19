@@ -30,7 +30,12 @@
     return j;
   }
   async function loadConfig() {
-    try { const j = await api('/api/config'); GA.applyConfig(j.config); } catch (e) { /* offline: built-in defaults */ }
+    try {
+      const j = await api('/api/config');
+      GA.applyConfig(j.config);
+      GA.setCustomMaps(j.maps || []);
+      for (const k of Object.keys(thumbs)) if (k.startsWith('c_')) delete thumbs[k];
+    } catch (e) { /* offline: built-in defaults */ }
   }
   function saveToken(t) { token = t; try { if (t) localStorage.setItem('ga.token', t); else localStorage.removeItem('ga.token'); } catch (e) { /* ignore */ } }
   function swatches(container, selected, taken, onPick) {
@@ -100,6 +105,7 @@
   $('btnSkirmish').onclick = async () => {
     GA.Audio.init();
     await loadConfig();
+    if (!GA.MAP_CHOICES.includes(skMap)) skMap = 'crossroads';
     const sel = $('skCredits'), def = GA.SETTINGS.startCredits;
     const opts = Array.from(new Set([3000, 6000, 12000, def])).sort((a, b) => a - b);
     sel.innerHTML = ''; opts.forEach((v) => { const o = document.createElement('option'); o.value = v; o.textContent = v.toLocaleString('en-US') + (v === def ? ' (default)' : ''); sel.appendChild(o); });
@@ -160,7 +166,7 @@
 
   // ------------------------------------------------------------ skirmish
   let skColor = 0, skMap = 'crossroads';
-  try { skMap = localStorage.getItem('ga.map') || skMap; if (!GA.MAP_CHOICES.includes(skMap)) skMap = 'crossroads'; } catch (e) { /* ignore */ }
+  try { skMap = localStorage.getItem('ga.map') || skMap; } catch (e) { /* ignore */ }
   function drawSkMaps() { mapPicker($('skMaps'), skMap, (id) => { skMap = id; try { localStorage.setItem('ga.map', id); } catch (e) { /* ignore */ } drawSkMaps(); }); }
   function drawSkColors() { swatches($('skColors'), skColor, new Set(), (i) => { skColor = i; drawSkColors(); }); }
   $('btnSkStart').onclick = () => {
@@ -206,6 +212,7 @@
   async function enterLobby() {
     $('multiErr').textContent = ''; $('lobbyLog').innerHTML = '';
     show('lobby');
+    loadConfig();
     try { await connect(); } catch (e) { /* message shown */ }
   }
   $('btnCreate').onclick = async () => { try { (await connect()).send({ t: 'create' }); } catch (e) { /* shown */ } };
@@ -284,6 +291,7 @@
     $('btnStart').style.display = isHost ? '' : 'none';
     $('lobbyHint').textContent = isHost ? 'You are the host. Pick who plays in each slot and choose colours, then start.' : 'Waiting for the host to start the game…';
     $('fillLevel').value = m.fill; $('lobbySpeed').value = String(m.speed);
+    if (typeof m.map === 'string' && m.map.startsWith('c_') && !GA.CUSTOM_MAPS[m.map] && !m.mapsReloaded) { m.mapsReloaded = true; loadConfig().then(() => { if (roomInfo === m || !roomInfo) showRoom(m); }); }
     mapPicker($('roomMaps'), m.map, isHost ? (id) => transport.send({ t: 'map', id }) : null);
     const cont = $('slots');
     cont.innerHTML = '';
