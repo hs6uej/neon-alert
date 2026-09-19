@@ -55,7 +55,7 @@ function writeJson(name, obj) {
 const ART_DIR = path.join(DATA_DIR, 'art');
 fs.mkdirSync(ART_DIR, { recursive: true });
 const ART_FILE_RE = /^([a-z0-9_]{2,16})-(\d{1,13})\.png$/;
-const ART_MAX_BYTES = 600 * 1024, ART_MAX_SIDE = 1024, ART_MAX_FILES = 300;
+const ART_MAX_BYTES = 800 * 1024, ART_MAX_SIDE = 2048, ART_MAX_FILES = 300; // a picture may be a strip of up to 8 animation frames
 const artPath = (id, v) => path.join(ART_DIR, id + '-' + v + '.png');
 const validArtType = (id) => typeof id === 'string' && (GA.BUILTIN_TYPES.includes(id) || GA.CUSTOM_TYPE_ID.test(id));
 // Reads width / height of a PNG without decoding it; null when it is not a PNG.
@@ -85,13 +85,23 @@ const ART_STYLES = {
   pixel: 'Chunky retro pixel art with a limited palette, hard pixel edges, no blur.',
   toon: 'Bold cartoon game art, thick clean outlines, flat bright colors with simple cel shading.',
 };
-function artPrompt(kind, subject, style, hasRef) {
-  return `Design ${kind === 'b' ? 'a single sci-fi BUILDING' : 'a single sci-fi military UNIT (vehicle, walker, aircraft or soldier)'} as a sprite for a real-time strategy game. ` +
-    `Subject: ${subject}. ${ART_STYLES[style] || ART_STYLES.neon} ` +
-    `Camera: isometric 2.5D, high three-quarter view from above${kind === 'u' ? ', the unit faces to the RIGHT of the image' : ''}. ` +
-    (hasRef ? 'The attached image is the current picture (or a rough sketch): keep its overall design, proportions and silhouette unless the subject asks for a change. ' : '') +
-    'Show ONE object, centered, fully inside the image with a small margin. No text, no logos, no UI, no ground plane, no scenery, no cast shadow. ' +
-    'The background must be one perfectly flat solid pure magenta color (#FF00FF) with nothing else in it, and the object itself must not contain magenta.';
+const ART_MOTIONS = {
+  idle: 'a HOVER / IDLE glow loop: cell 1 base pose, cell 2 raised slightly with lights a little brighter, cell 3 raised the most with lights brightest, cell 4 back down slightly; the body, turret and details stay identical',
+  walk: 'a WALK / MOVE cycle with clearly different poses: cell 1 right foot (or front wheel/leg) far forward, cell 2 legs together passing, cell 3 left foot far forward, cell 4 legs together passing - exaggerate the difference between poses',
+};
+function artPrompt(kind, subject, style, hasRef, frames, motion) {
+  const what = kind === 'b' ? 'a single sci-fi BUILDING' : 'a single sci-fi military UNIT (vehicle, walker, aircraft or soldier)';
+  const rules = 'No text, no logos, no UI, no ground plane, no scenery, no cast shadow. ' +
+    'The whole image background must be one perfectly flat solid pure magenta color (#FF00FF) with nothing else in it, and the object itself must not contain magenta.';
+  const look = `Subject: ${subject}. ${ART_STYLES[style] || ART_STYLES.neon} Camera: isometric 2.5D, high three-quarter view from above${kind === 'u' ? ', the unit faces to the RIGHT' : ''}. `;
+  const ref = hasRef ? 'The attached image is the current picture (or a rough sketch): keep its overall design, proportions and silhouette unless the subject asks for a change. ' : '';
+  if (frames === 4) {
+    return `Create a 2x2 SPRITE SHEET (four equal square cells in a 2-by-2 grid, no borders or gridlines) for a real-time strategy game: the SAME ${what} in four animation frames. ` + look + ref +
+      `Every cell has identical design, colors, size and camera angle; cell order left-to-right, top-to-bottom is one looping animation: ${ART_MOTIONS[motion] || ART_MOTIONS.idle}. ` +
+      'Each object is centered in its own cell with a margin, with its base at the same height in every cell. ' + rules;
+  }
+  return `Design ${what} as a sprite for a real-time strategy game. ` + look + ref +
+    'Show ONE object, centered, fully inside the image with a small margin. ' + rules;
 }
 let artBusy = 0;
 function geminiGenerate(text, ref) {
@@ -508,14 +518,16 @@ async function handleApi(req, res, url) {
         const prompt = String(b.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 500);
         if (prompt.length < 3) return json(res, 400, { error: 'Describe what to draw (at least a few words).' });
         if (b.kind !== 'b' && b.kind !== 'u') return json(res, 400, { error: 'kind must be b or u' });
+        const frames = b.frames === undefined || b.frames === 1 ? 1 : b.frames;
+        if (frames !== 1 && frames !== 4) return json(res, 400, { error: 'frames must be 1 or 4' });
         const ref = b.ref ? dataUrl(b.ref, 2.8 * 1024 * 1024) : null;
         if (b.ref && !ref) return json(res, 400, { error: 'The reference picture is not a valid PNG/JPEG/WebP.' });
         if (!GEMINI_API_KEY) return json(res, 503, { error: 'AI drawing is not set up: put GEMINI_API_KEY in the .env file and restart the server.' });
         if (artBusy >= 2) return json(res, 429, { error: 'Two pictures are already being drawn - wait a moment.' });
         artBusy++;
         try {
-          const img = await geminiGenerate(artPrompt(b.kind, prompt, b.style, !!ref), ref);
-          logEvent('art_generated', { user: me.name, ip, ua, note: (b.kind === 'b' ? 'building: ' : 'unit: ') + prompt.slice(0, 80) });
+          const img = await geminiGenerate(artPrompt(b.kind, prompt, b.style, !!ref, frames, b.motion), ref);
+          logEvent('art_generated', { user: me.name, ip, ua, note: (b.kind === 'b' ? 'building' : 'unit') + (frames === 4 ? ' x4 frames' : '') + ': ' + prompt.slice(0, 80) });
           return json(res, 200, { image: `data:${img.mime};base64,${img.data}` });
         } catch (e) {
           logEvent('art_generated', { user: me.name, ip, ua, ok: false, note: e.message.slice(0, 120) });

@@ -119,7 +119,8 @@
   function hazard(v, x, y, w, z, zh, side) { /* decorative bay door handled inline */ }
 
   // ------------------------------------------------------------------ pictures made in the admin "Studio" (AI / uploaded / hand drawn)
-  // d.art = { id, v, s, y } -> /art/<id>-<v>.png. While a picture is still loading the built-in drawing is used.
+  // d.art = { id, v, s, y, f } -> /art/<id>-<v>.png, a strip of f animation frames side by side (f = 1: a single picture).
+  // While a picture is still loading the built-in drawing is used.
   const artCache = new Map(), artWaiters = new Map();
   const artUrl = (a) => `/art/${a.id}-${a.v}.png`;
   function artSprite(a) {
@@ -152,58 +153,94 @@
     return Promise.race([Promise.all(jobs), new Promise((res) => setTimeout(res, 5000))]);
   };
   const unitKind = (d) => (d.fly ? 'air' : d.cat === 'infantry' ? 'inf' : 'veh');
-  // sprite size in screen pixels at zoom 1
-  const unitSpriteW = (d, a) => (unitKind(d) === 'inf' ? 34 : 40 + (d.r || 0.4) * 60) * a.s;
-  const bldSpriteW = (d, a) => (d.w + d.h) * 32 * 1.02 * a.s;
+  // Every picture is fitted INTO a fixed box for its kind of unit / building (screen pixels at zoom 1), so pictures of
+  // different shapes end up the same size on the map. The admin "size" slider scales the box.
+  function artBox(d, a) {
+    if (d.kind === 'b') { const w = (d.w + d.h) * 32 * 1.02; return { w: w * a.s, h: w * 0.9 * a.s }; }
+    const k = unitKind(d);
+    if (k === 'inf') return { w: 30 * a.s, h: 36 * a.s };
+    if (k === 'air') return { w: 54 * a.s, h: 38 * a.s };
+    const w = 40 + (d.r || 0.4) * 60;
+    return { w: w * a.s, h: w * 0.66 * a.s };
+  }
+  // drawn size (px at zoom 1) of ONE frame, the picture fitted into its box
+  function artSize(d, a, img) {
+    const fw = imgW(img) / (a.f || 1), fh = imgH(img), box = artBox(d, a), k = Math.min(box.w / fw, box.h / fh);
+    return { w: fw * k, h: fh * k };
+  }
+  // which frame to show: buildings and hovering things loop by themselves, walkers only while they move
+  function artFrame(a, d, e, t) {
+    const n = a.f || 1;
+    if (n < 2) return 0;
+    const moving = !!e.moving, alwaysOn = d.kind === 'b' || d.fly || unitKind(d) === 'veh';
+    if (!moving && !alwaysOn) return 0;
+    return Math.floor((t * (moving ? 8 : 4) + (e.id || 0) * 0.37) % n);
+  }
   // click areas for game.js (tile heights / pixel boxes matching what is drawn)
   GA.artBuildingHeight = function (d) {
     const img = d.art && artSprite(d.art);
     if (!img) return 0;
-    const sh = bldSpriteW(d, d.art) * imgH(img) / imgW(img);
-    return Math.max(0.6, (sh - 16 * (d.w + d.h)) / 34);
+    return Math.max(0.6, (artSize(d, d.art, img).h - 16 * (d.w + d.h)) / 34);
   };
   GA.artUnitBox = function (d) {
     const img = d.art && artSprite(d.art);
-    if (!img) return null;
-    const w = unitSpriteW(d, d.art);
-    return { w, h: w * imgH(img) / imgW(img) };
+    return img ? artSize(d, d.art, img) : null;
   };
 
-  function drawArtBuilding(v, e, a, img) {
+  function drawArtBuilding(v, e, t, a, img) {
     const ctx = v.ctx, col = PLAYER_COLORS[e.owner] || PLAYER_COLORS[0], z = v.zoom;
     const bx = e.bx, by = e.by, w = e.w, h = e.h;
     // owner-coloured base plate keeps the sides readable
     poly(ctx, [P(v, bx, by, 0), P(v, bx + w, by, 0), P(v, bx + w, by + h, 0), P(v, bx, by + h, 0)], shade(col.dark, 0.7), col.main, 2 * z);
-    const sw = bldSpriteW(e.def, a) * z, sh = sw * imgH(img) / imgW(img);
+    const sz = artSize(e.def, a, img), sw = sz.w * z, sh = sz.h * z, fw = imgW(img) / (a.f || 1), fr = artFrame(a, e.def, e, t);
     const [sx, sy] = P(v, bx + w / 2, by + h / 2, 0);
     const bottom = sy + (w + h) * v.B * 0.5 * 1.05 + a.y * sh;
-    ctx.drawImage(img, sx - sw / 2, bottom - sh, sw, sh);
+    ctx.drawImage(img, fr * fw, 0, fw, imgH(img), sx - sw / 2, bottom - sh, sw, sh);
+    // a slow glow pulse so a building never looks like a still photo
+    const pulse = 0.5 + 0.5 * Math.sin(t * 2.2 + e.id);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (ctx.globalAlpha || 1) * (0.04 + 0.1 * pulse);
+    ctx.drawImage(img, fr * fw, 0, fw, imgH(img), sx - sw / 2, bottom - sh, sw, sh);
+    ctx.restore();
   }
   function drawArtUnit(v, e, t, a, img) {
     const ctx = v.ctx, col = PLAYER_COLORS[e.owner] || PLAYER_COLORS[0], z = v.zoom, d = e.def;
     const x = e.rx, y = e.ry, r = d.r || 0.3, kind = unitKind(d);
+    const ph = t * (kind === 'inf' ? 11 : 8) + e.id, mv = !!e.moving;
     const alt = kind === 'air' ? 1.6 + Math.sin(t * 3 + e.id) * 0.06 : 0;
-    const bob = kind === 'inf' && e.moving ? Math.abs(Math.sin(t * 11 + e.id)) * 1.4 * z : 0;
     if (kind === 'air') shadowAt(v, x, y, 14, 6.5, 0.22); else shadowAt(v, x, y, kind === 'inf' ? 8 : 12 + r * 30, kind === 'inf' ? 3.6 : 6 + r * 14);
     ringGround(v, x, y, Math.max(0.3, r * 0.95), col.main, 1.8 * z, 0.75);
-    const wpx = unitSpriteW(d, a) * z, hpx = wpx * imgH(img) / imgW(img);
+    const sz = artSize(d, a, img), wpx = sz.w * z, hpx = sz.h * z, fw = imgW(img) / (a.f || 1), fr = artFrame(a, d, e, t);
     const [sx, sy] = P(v, x, y, 0);
     // pictures face right; turn them around when the unit heads left on the screen (with a dead zone so it does not flicker)
     const fx = Math.cos(e.ang) - Math.sin(e.ang);
     if (fx > 0.2) e.flipArt = false; else if (fx < -0.2) e.flipArt = true;
+    const dir = e.flipArt ? -1 : 1;
+    // motion: walkers bob and lean forward, vehicles rock, everything breathes a little when standing, guns kick back
+    let bob = 0, tilt = 0, squash = 1;
+    if (mv) {
+      if (kind === 'inf') { bob = Math.abs(Math.sin(ph)) * 2.2 * z; tilt = Math.sin(ph) * 0.07 + 0.05; }
+      else if (kind === 'veh') { bob = Math.abs(Math.sin(ph)) * 1.1 * z; tilt = Math.sin(ph * 0.5) * 0.02; }
+      else tilt = 0.06;
+    } else {
+      squash = 1 + Math.sin(t * 2.2 + e.id) * (kind === 'inf' ? 0.018 : 0.01);
+      if (kind === 'air') tilt = Math.sin(t * 1.6 + e.id) * 0.03;
+    }
+    const recoil = e.flash > 0 ? 2.5 * z : 0;
     const foot = kind === 'inf' ? 0.94 : kind === 'air' ? 0.55 : 0.8;
     ctx.save();
-    ctx.translate(sx, sy - alt * v.Z - bob + a.y * hpx);
-    if (e.flipArt) ctx.scale(-1, 1);
-    ctx.drawImage(img, -wpx / 2, -hpx * foot, wpx, hpx);
+    ctx.translate(sx - dir * recoil, sy - alt * v.Z - bob + a.y * hpx);
+    if (dir < 0) ctx.scale(-1, 1);
+    ctx.rotate(tilt);
+    ctx.scale(1, squash);
+    ctx.drawImage(img, fr * fw, 0, fw, imgH(img), -wpx / 2, -hpx * foot, wpx, hpx);
     ctx.restore();
-    if (e.flash > 0) glow(ctx, sx + (e.flipArt ? -1 : 1) * wpx * 0.38, sy - alt * v.Z - hpx * (foot - 0.5), 9 * z, col.light, 0.9);
+    if (e.flash > 0) glow(ctx, sx + dir * wpx * 0.38, sy - alt * v.Z - hpx * (foot - 0.5), 9 * z, col.light, 0.9);
   }
 
   // ------------------------------------------------------------------ building art
   function drawBuilding(v, e, t) {
     const pic = e.def.art && artSprite(e.def.art);
-    if (pic) { drawArtBuilding(v, e, e.def.art, pic); return; }
+    if (pic) { drawArtBuilding(v, e, t, e.def.art, pic); return; }
     const ctx = v.ctx, d = e.def, col = PLAYER_COLORS[e.owner] || PLAYER_COLORS[0];
     const bx = e.bx, by = e.by, w = e.w, h = e.h, cx = bx + w / 2, cy = by + h / 2;
     const dark = '#1a2333', mid = '#26334a', light = '#34445f';
@@ -1062,10 +1099,10 @@
     const pic = d.art && artSprite(d.art);
     if (pic) {
       const col = PLAYER_COLORS[owner] || PLAYER_COLORS[0];
-      const k = Math.min(70 / imgW(pic), 48 / imgH(pic)), dw = imgW(pic) * k, dh = imgH(pic) * k;
+      const fw = imgW(pic) / (d.art.f || 1), k = Math.min(70 / fw, 48 / imgH(pic)), dw = fw * k, dh = imgH(pic) * k; // first frame
       ctx.fillStyle = col.main; ctx.globalAlpha = 0.55;
       ctx.beginPath(); ctx.ellipse(38, 51, Math.min(30, dw * 0.42), 4, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
-      ctx.drawImage(pic, (76 - dw) / 2, 53 - dh, dw, dh);
+      ctx.drawImage(pic, 0, 0, fw, imgH(pic), (76 - dw) / 2, 53 - dh, dw, dh);
     } else {
       let zoom, ox, oy, e;
       if (d.kind === 'b') {
@@ -1104,7 +1141,8 @@
 
   // A larger, live preview used by the admin Studio: the picture (or the built-in drawing when art is null) on a small map patch.
   // art = { img, s, y }
-  GA.renderPreview = function (canvas, type, art, owner, foot) {
+  GA.renderPreview = function (canvas, type, art, owner, foot, t, moving) {
+    t = t || 0.5;
     const d = DEFS[type], ctx = canvas.getContext('2d'), CW = canvas.width, CH = canvas.height;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#05080d'; ctx.fillRect(0, 0, CW, CH);
@@ -1115,15 +1153,15 @@
       poly(ctx, q, (i + j) & 1 ? '#152535' : '#17293b', 'rgba(90,190,255,0.08)', 1);
     }
     const saved = d.art;
-    d.art = art && art.img ? { id: type, v: 'preview', s: art.s, y: art.y, img: art.img } : undefined;
+    d.art = art && art.img ? { id: type, v: 'preview', s: art.s, y: art.y, f: art.f || 1, img: art.img } : undefined;
     try {
       if (d.kind === 'b') {
         const e = { type, def: d, owner, bx: -d.w / 2, by: -d.h / 2, w: d.w, h: d.h, x: 0, y: 0, id: 3, ang: 0.6, hp: 1, mhp: 1 };
-        drawBuilding(v, e, 0.5);
+        drawBuilding(v, e, t);
         if (foot) poly(ctx, [P(v, e.bx, e.by, 0), P(v, e.bx + d.w, e.by, 0), P(v, e.bx + d.w, e.by + d.h, 0), P(v, e.bx, e.by + d.h, 0)], null, 'rgba(255,255,255,0.75)', 1.2);
       } else {
-        const e = { type, def: d, owner, rx: 0, ry: 0, x: 0, y: 0, ang: -Math.PI / 4, id: 3, hp: 1, mhp: 1, cargo: 0, moving: false };
-        if (d.fly) drawAir(v, e, 0.5); else if (d.cat === 'infantry') drawInfantry(v, e, 0.5); else drawVehicle(v, e, 0.5);
+        const e = { type, def: d, owner, rx: 0, ry: 0, x: 0, y: 0, ang: -Math.PI / 4, id: 3, hp: 1, mhp: 1, cargo: 0, moving: !!moving };
+        if (d.fly) drawAir(v, e, t); else if (d.cat === 'infantry') drawInfantry(v, e, t); else drawVehicle(v, e, t);
         if (foot) ringGround(v, 0, 0, Math.max(0.3, d.r || 0.3), 'rgba(255,255,255,0.75)', 1.2, 1);
       }
     } finally { d.art = saved; }

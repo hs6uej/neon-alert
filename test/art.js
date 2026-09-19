@@ -17,19 +17,19 @@ const GA = globalThis.GA;
   const raw = {
     custom: { types: { x_aa: { base: 'arc', name: 'A' }, x_bb: { base: 'arc', name: 'B' }, x_cc: { base: 'barracks', name: 'C' } } },
     art: {
-      trooper: { v: 5, s: 1.2, y: 0.1 }, arc: { v: 7 }, x_aa: { v: 9, s: 99, y: -9 }, x_cc: { v: 3.5 },
+      trooper: { v: 5, s: 1.2, y: 0.1, f: 1 }, arc: { v: 7 }, x_aa: { v: 9, s: 99, y: -9 }, x_cc: { v: 3.5 },
       nosuch: { v: 1 }, x_zzz: { v: 1 }, power: { v: 0 }, radar: 'x', refinery: { v: -4 }, factory: { v: 'abc' },
     },
   };
   const c = GA.cleanConfig(raw);
   assert.deepStrictEqual(Object.keys(c.art).sort(), ['arc', 'trooper', 'x_aa'], 'unknown ids and bad versions are dropped');
-  assert.deepStrictEqual(c.art.arc, { v: 7, s: 1, y: 0 }, 'defaults for size / height');
-  assert.deepStrictEqual(c.art.x_aa, { v: 9, s: 3, y: -0.6 }, 'size and height are clamped');
+  assert.deepStrictEqual(c.art.arc, { v: 7, s: 1, y: 0, f: 1 }, 'defaults for size / height / frames');
+  assert.deepStrictEqual(c.art.x_aa, { v: 9, s: 3, y: -0.6, f: 1 }, 'size and height are clamped');
   assert.deepStrictEqual(GA.cleanConfig({}).art, {}, 'empty config has an art map');
   GA.applyConfig(raw);
-  assert.deepStrictEqual(GA.DEFS.trooper.art, { id: 'trooper', v: 5, s: 1.2, y: 0.1 });
-  assert.deepStrictEqual(GA.DEFS.x_aa.art, { id: 'x_aa', v: 9, s: 3, y: -0.6 }, 'a custom type can have its own picture');
-  assert.deepStrictEqual(GA.DEFS.x_bb.art, { id: 'arc', v: 7, s: 1, y: 0 }, 'a copy uses the picture of the type it was made from');
+  assert.deepStrictEqual(GA.DEFS.trooper.art, { id: 'trooper', v: 5, s: 1.2, y: 0.1, f: 1 });
+  assert.deepStrictEqual(GA.DEFS.x_aa.art, { id: 'x_aa', v: 9, s: 3, y: -0.6, f: 1 }, 'a custom type can have its own picture');
+  assert.deepStrictEqual(GA.DEFS.x_bb.art, { id: 'arc', v: 7, s: 1, y: 0, f: 1 }, 'a copy uses the picture of the type it was made from');
   assert(!GA.DEFS.x_cc.art && !GA.DEFS.power.art, 'no picture where none is set');
   GA.DEFS.x_bb.art.s = 2; GA.applyConfig(raw);
   assert.strictEqual(GA.DEFS.x_bb.art.s, 1, 'applying again rebuilds pictures from the config');
@@ -142,6 +142,13 @@ function request(port, method, url, body, token) {
     r = await api('POST', '/api/admin/art/generate', { kind: 'b', prompt: 'a barracks', ref: png(makePng(32, 32)) }, admin);
     assert.strictEqual(r.status, 200); assert.strictEqual(seen[1].body.contents[0].parts[1].inline_data.mime_type, 'image/png', 'reference picture is forwarded');
     assert(/BUILDING/.test(seen[1].body.contents[0].parts[0].text) && /attached image/.test(seen[1].body.contents[0].parts[0].text));
+    r = await api('POST', '/api/admin/art/generate', { kind: 'u', prompt: 'hover tank', frames: 4, motion: 'walk' }, admin);
+    assert.strictEqual(r.status, 200);
+    const sheet = seen[seen.length - 1].body.contents[0].parts[0].text;
+    assert(/2x2 SPRITE SHEET/.test(sheet) && /WALK/.test(sheet) && /hover tank/.test(sheet) && /#FF00FF/.test(sheet), 'animation sheet prompt');
+    await api('POST', '/api/admin/art/generate', { kind: 'b', prompt: 'a barracks', frames: 4 }, admin);
+    assert(/HOVER \/ IDLE/.test(seen[seen.length - 1].body.contents[0].parts[0].text), 'idle loop is the default motion');
+    assert.strictEqual((await api('POST', '/api/admin/art/generate', { kind: 'u', prompt: 'a tank', frames: 3 }, admin)).status, 400, 'only 1 or 4 frames');
     assert.strictEqual((await api('POST', '/api/admin/art/generate', { kind: 'u', prompt: 'x' }, admin)).status, 400, 'too short');
     assert.strictEqual((await api('POST', '/api/admin/art/generate', { kind: 'z', prompt: 'a tank' }, admin)).status, 400, 'bad kind');
     assert.strictEqual((await api('POST', '/api/admin/art/generate', { kind: 'u', prompt: 'a tank', ref: 'data:text/html;base64,AAAA' }, admin)).status, 400, 'reference must be an image');
@@ -162,7 +169,7 @@ function request(port, method, url, body, token) {
     r = await api('PUT', '/api/admin/art', { type: 'trooper', png: png(good) }, admin);
     assert.strictEqual(r.body.v, v1 + 1, 'every upload gets a new version (old versions stay cached forever)');
     for (const [b, why] of [[{ type: 'nosuch', png: png(good) }, 'unknown type'], [{ type: '../x', png: png(good) }, 'path'], [{ type: 'arc', png: 'data:image/png;base64,AAAA' }, 'not a png'],
-      [{ type: 'arc', png: 'data:image/jpeg;base64,' + good.toString('base64') }, 'jpeg'], [{ type: 'arc', png: png(makePng(2000, 8)) }, 'too wide'], [{ type: 'arc', png: png(makePng(4, 4)) }, 'too small'], [{ type: 'arc' }, 'missing']]) {
+      [{ type: 'arc', png: 'data:image/jpeg;base64,' + good.toString('base64') }, 'jpeg'], [{ type: 'arc', png: png(makePng(2100, 8)) }, 'too wide'], [{ type: 'arc', png: png(makePng(4, 4)) }, 'too small'], [{ type: 'arc' }, 'missing']]) {
       assert.strictEqual((await api('PUT', '/api/admin/art', b, admin)).status, 400, why + ' is rejected');
     }
     r = await api('GET', `/art/trooper-${v1}.png`);
@@ -178,7 +185,7 @@ function request(port, method, url, body, token) {
     r = await api('PUT', '/api/admin/config', { config: { custom: { types: { x_tank: { base: 'arc', name: 'Zap' } } }, art: { trooper: { v: v1, s: 1.5, y: 0.1 }, x_tank: { v: vc }, arc: { v: 424242 } } } }, admin);
     assert.strictEqual(r.status, 200);
     assert.deepStrictEqual(Object.keys(r.body.config.art).sort(), ['trooper', 'x_tank'], 'a reference to a missing file is dropped');
-    assert.deepStrictEqual(r.body.config.art.trooper, { v: v1, s: 1.5, y: 0.1 });
+    assert.deepStrictEqual(r.body.config.art.trooper, { v: v1, s: 1.5, y: 0.1, f: 1 });
     r = await api('GET', '/api/config');
     assert.strictEqual(r.body.config.art.x_tank.v, vc, 'players get the picture list with the config');
     // dropping a picture: the file survives the grace period, then it is cleaned up on the next save

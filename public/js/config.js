@@ -57,7 +57,7 @@
       proj: { t: 'enum', values: ['bolt', 'rocket', 'plasma', 'shell', 'rail'], label: 'Visual' },
     },
     mult: num(0, 5, 0.05, 'Multiplier'),
-    art: { s: num(0.3, 3, 0.05, 'Picture size'), y: num(-0.6, 0.6, 0.01, 'Picture height') },
+    art: { s: num(0.3, 3, 0.05, 'Picture size'), y: num(-0.6, 0.6, 0.01, 'Picture height'), f: num(1, 8, 1, 'Animation frames') },
     bots: {
       think: num(0.1, 10, 0.1, 'Think interval (s)'),
       speed: num(0.2, 3, 0.05, 'Production speed x'),
@@ -148,7 +148,8 @@
     for (const [id, a] of Object.entries(raw.art && typeof raw.art === 'object' ? raw.art : {})) {
       if (!allIds.includes(id) || !a || typeof a !== 'object' || !Number.isSafeInteger(a.v) || a.v < 1 || a.v > 9999999999999) continue;
       const s = clampNum(a.s === undefined ? 1 : a.s, GA.SCHEMA.art.s), y = clampNum(a.y === undefined ? 0 : a.y, GA.SCHEMA.art.y);
-      out.art[id] = { v: a.v, s: Math.round((s === null ? 1 : s) * 100) / 100, y: Math.round((y === null ? 0 : y) * 100) / 100 };
+      const f = clampNum(a.f === undefined ? 1 : a.f, GA.SCHEMA.art.f);
+      out.art[id] = { v: a.v, s: Math.round((s === null ? 1 : s) * 100) / 100, y: Math.round((y === null ? 0 : y) * 100) / 100, f: f === null ? 1 : Math.round(f) };
     }
     for (const [t, fields] of Object.entries(raw.defs || {})) {
       if (!GA.BASE.defs[t] || !fields || typeof fields !== 'object') continue;
@@ -224,7 +225,7 @@
     for (const l of Object.keys(GA.BOT_LEVELS)) Object.assign(GA.BOT_LEVELS[l], GA.BASE.bots[l]);
     Object.assign(GA.SETTINGS, GA.BASE.settings);
 
-    for (const [id, a] of Object.entries(cfg.art)) if (GA.DEFS[id] && GA.BASE.defs[id]) GA.DEFS[id].art = { id, v: a.v, s: a.s, y: a.y };
+    for (const [id, a] of Object.entries(cfg.art)) if (GA.DEFS[id] && GA.BASE.defs[id]) GA.DEFS[id].art = { id, v: a.v, s: a.s, y: a.y, f: a.f };
     for (const [t, f] of Object.entries(cfg.defs)) Object.assign(GA.DEFS[t], f);
     for (const [k, f] of Object.entries(cfg.weapons)) Object.assign(GA.WEAPONS[k], f);
     for (const [w, r] of Object.entries(cfg.mult)) Object.assign(GA.MULT[w], r);
@@ -242,7 +243,7 @@
       Object.assign(d, fields);
       // a copy looks like the type it was made from (including that type's picture) unless it gets a picture of its own
       const own = cfg.art[id];
-      if (own) d.art = { id, v: own.v, s: own.s, y: own.y }; else if (src.art) d.art = Object.assign({}, src.art);
+      if (own) d.art = { id, v: own.v, s: own.s, y: own.y, f: own.f }; else if (src.art) d.art = Object.assign({}, src.art);
       d.id = id; d.custom = true; d.base = base; d.role = src.role || base; d.look = src.look || base; d.buildable = true;
       if (!d.weapon) delete d.weapon;
       GA.DEFS[id] = d;
