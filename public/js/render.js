@@ -926,10 +926,10 @@
       ox = 38; oy = 36 - (d.w + d.h) * 0.0;
       if (type === 'uplink' || type === 'conyard') oy += 6;
     } else {
-      zoom = d.def === undefined && d.cat === 'infantry' ? 1.7 : d.cat === 'infantry' ? 1.9 : d.fly ? 1.15 : 1.15;
+      zoom = d.def === undefined && d.cat === 'infantry' ? 1.7 : d.cat === 'infantry' ? 1.9 : d.fly ? 0.85 : 1.15;
       e = { type, def: d, owner, rx: 0, ry: 0, x: 0, y: 0, ang: 0.7, id: 3, hp: 1, mhp: 1, cargo: 0, moving: false };
       ox = 38; oy = d.cat === 'infantry' ? 44 : 38;
-      if (d.fly) oy += 6;
+      if (d.fly) oy = 53;
     }
     const v = { ctx, A: 32 * zoom, B: 16 * zoom, OX: ox, OY: oy, Z: 34 * zoom, zoom };
     if (d.kind === 'b') drawBuilding(v, e, 0.5);

@@ -58,6 +58,8 @@
     'username taken': 'ชื่อผู้ใช้ถูกใช้แล้ว', 'rate limited': 'ถูกจำกัดความถี่', 'older connection closed': 'ปิดการเชื่อมต่อเก่า',
     // ---- help
     'Economy': 'เศรษฐกิจ', 'Base & army': 'ฐานและกองทัพ', 'Controls': 'ปุ่มควบคุม', 'Tips': 'เคล็ดลับ',
+    '📖 Unit guide': '📖 คู่มืออาคารและยูนิต', 'Unit guide': 'คู่มืออาคารและยูนิต',
+    'Every structure, soldier and machine: what it is, what it is for, and what it can do.': 'อาคาร ทหาร และเครื่องจักรทุกชนิด: คืออะไร ใช้ทำอะไร และทำอะไรได้บ้าง',
     // ---- HUD
     'RADAR OFFLINE': 'เรดาร์ไม่ทำงาน', 'Build a Sensor Array': 'สร้างระบบเรดาร์เซ็นเซอร์', '(needs power)': '(ต้องมีไฟฟ้า)',
     '🔧 Repair': '🔧 ซ่อม', '$ Sell': '$ ขาย', 'POWER': 'ไฟฟ้า',

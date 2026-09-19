@@ -108,6 +108,11 @@
     show('skirmish');
   };
   $('btnHow').onclick = () => show('help');
+  $('btnGuide').onclick = async () => {
+    await loadConfig();
+    GA.renderGuide();
+    show('guide');
+  };
   $('btnMulti').onclick = () => { GA.Audio.init(); enterLobby(); };
   $('skOpp').onchange = () => {
     const two = $('skOpp').value === '2';

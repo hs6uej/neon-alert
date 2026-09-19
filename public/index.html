@@ -38,6 +38,7 @@
       <button id="btnSkirmish" class="big">▶ &nbsp;Skirmish vs AI</button>
       <button id="btnMulti" class="big">🌐 &nbsp;Online lobby &nbsp;<small>(custom rooms)</small></button>
       <div class="btns row" style="margin-top:0"><button id="btnStats" style="flex:1">📊 Stats</button><button id="btnHow" class="ghost" style="flex:1">How to play</button></div>
+      <button id="btnGuide">📖 Unit guide</button>
       <a id="btnAdmin" class="btn ghost hidden" href="/admin" target="_blank">⚙ Admin panel</a>
       <button id="btnLogout" class="ghost">Sign out</button>
     </div>
@@ -133,6 +134,15 @@
     <p id="lobbyErr" class="err"></p>
   </div>
 
+  <div class="panel wide hidden" data-screen="guide">
+    <h2>Unit guide</h2>
+    <p class="muted">Every structure, soldier and machine: what it is, what it is for, and what it can do.</p>
+    <div id="guideTabs" class="seg"></div>
+    <div id="guideThumbs" class="gthumbs"></div>
+    <div id="guideDetail" class="gdetail"></div>
+    <div class="btns row"><button class="ghost" data-back>← Back</button></div>
+  </div>
+
   <div class="panel wide hidden" data-screen="help">
     <h2>How to play</h2>
     <div class="help">
@@ -202,6 +212,7 @@
 <script src="js/audio.js"></script>
 <script src="js/render.js"></script>
 <script src="js/net.js"></script>
+<script src="js/guide.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>
