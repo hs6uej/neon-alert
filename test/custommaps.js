@@ -44,7 +44,7 @@ for (const id of ['crossroads', 'isles', 'highlands', 'random']) {
     assert(v.errors.some((e) => e.k.includes(text)), `expected error "${text}", got: ${v.errors.map((e) => e.k).join(' | ')}`);
   };
   expect((m) => { m.name = 'ab'; }, 'name');
-  expect((m) => { m.starts.pop(); }, 'exactly 3');
+  expect((m) => { m.starts.pop(); m.starts.pop(); }, '2 or 3');
   expect((m) => { m.starts[1] = [m.starts[0][0] + 3, m.starts[0][1]]; }, 'too close together');
   expect((m) => { m.starts[2] = [3, 3]; }, 'edge');
   expect((m) => { m.terrain = '0:5'; }, 'Terrain');
@@ -95,5 +95,20 @@ for (const id of ['crossroads', 'isles', 'highlands', 'random']) {
   const s2 = new GA.Sim({ seed: 1, map: 'c_abcd1234', players: [{ name: 'A', team: 0 }, { name: 'B', team: 1 }] });
   assert(s2.mapId === 'random' && s2.buildings.size >= 2, 'unknown custom id falls back to a random map');
   console.log('ok registry + simulation on a custom map (units after 3 min:', s.units.size, ')');
+}
+// ---- 2-player (duel) maps
+{
+  const m = fromGen('crossroads', 3, 'Duel Test'); m.starts = m.starts.slice(0, 2);
+  const v = GA.validateMap(m);
+  assert.strictEqual(v.errors.length, 0, 'duel map valid: ' + v.errors.map((e) => e.k).join('|'));
+  GA.setCustomMaps([{ id: 'c_duel0001', ...v.map }]);
+  assert.strictEqual(GA.mapMaxPlayers('c_duel0001'), 2);
+  assert.strictEqual(GA.mapMaxPlayers('crossroads'), 3);
+  assert.strictEqual(GA.MAPS.find((x) => x.id === 'c_duel0001').players, 2);
+  const s = new GA.Sim({ seed: 2, map: 'c_duel0001', players: [{ name: 'A', team: 0, bot: 'normal' }, { name: 'B', team: 1, bot: 'normal' }] });
+  for (let i = 0; i < 20 * 60 * 2; i++) s.step();
+  assert(s.units.size > 6, 'two bots play the duel map');
+  assert.throws(() => new GA.Sim({ seed: 2, map: 'c_duel0001', players: [{ name: 'A' }, { name: 'B', team: 1 }, { name: 'C', team: 2 }] }), /holds 2 players/, 'three players do not fit');
+  console.log('ok 2-player map');
 }
 console.log('ALL OK');

@@ -333,6 +333,7 @@
       this.rnd = mulberry32(this.seed ^ 0x9e3779b9);
       const m = genMap(this.seed, cfg.map);
       this.mapId = m.mapId;
+      if (cfg.players.length > m.starts.length) throw new Error(`Map ${m.mapId} holds ${m.starts.length} players`);
       this.terrain = m.terrain;
       this.rockMax = SETTINGS.rockHp;
       this.rockHp = new Float32Array(N);       // >0 = a destructible rock tile

@@ -133,8 +133,8 @@
     'That username is already taken': 'ชื่อผู้ใช้นี้ถูกใช้แล้ว', 'Too many attempts. Try again in a few minutes.': 'ลองหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่', 'Wrong username or password': 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
     // ---- admin page
     // ---- map editor
-    'Maps': 'แผนที่', 'Map editor: build a battlefield for 3 players. Maps you save appear in the map picker for Skirmish and online rooms. The outer edge is always indestructible rock; rock inside the map can be destroyed in-game.':
-      'ตัวแก้ไขแผนที่: สร้างสนามรบสำหรับ 3 ผู้เล่น แผนที่ที่บันทึกจะไปอยู่ในตัวเลือกแผนที่ของโหมดเล่นกับบอทและห้องออนไลน์ หินขอบนอกสุดทำลายไม่ได้เสมอ ส่วนหินภายในแผนที่ทำลายได้ในเกม',
+    'Maps': 'แผนที่', 'Map editor: build a battlefield for 2 or 3 players. Maps you save appear in the map picker for Skirmish and online rooms. The outer edge is always indestructible rock; rock inside the map can be destroyed in-game.':
+      'ตัวแก้ไขแผนที่: สร้างสนามรบสำหรับ 2 หรือ 3 ผู้เล่น แผนที่ที่บันทึกจะไปอยู่ในตัวเลือกแผนที่ของโหมดเล่นกับบอทและห้องออนไลน์ หินขอบนอกสุดทำลายไม่ได้เสมอ ส่วนหินภายในแผนที่ทำลายได้ในเกม',
     'New map': 'แผนที่ใหม่', 'Editing': 'กำลังแก้ไข', 'Map name': 'ชื่อแผนที่', 'Short description': 'คำอธิบายสั้นๆ', 'Save': 'บันทึก', 'Save as new copy': 'บันทึกเป็นสำเนาใหม่', '＋ New map': '＋ แผนที่ใหม่',
     'Tools': 'เครื่องมือ', '⬜ Open ground': '⬜ พื้นโล่ง', '▦ Rock wall': '▦ กำแพงหิน', '≈ Water': '≈ น้ำ', '◈ Ore': '◈ แร่', '⌫ Erase ore': '⌫ ลบแร่', '⚑ Start position': '⚑ จุดเริ่มต้น',
     'D Crystal Derrick': 'D แท่นขุดคริสตัล', 'S Supply Depot': 'S คลังเสบียง', '✕ Remove object': '✕ ลบวัตถุ',
@@ -149,12 +149,14 @@
     'Looks good - ready to save.': 'ไม่พบปัญหา - พร้อมบันทึก', 'Map deleted.': 'ลบแผนที่แล้ว', 'Map loaded.': 'โหลดแผนที่แล้ว', 'Template loaded.': 'โหลดเทมเพลตแล้ว',
     'Saved. Everyone can pick it in Skirmish and in online rooms.': 'บันทึกแล้ว ทุกคนเลือกเล่นได้ในโหมดเล่นกับบอทและห้องออนไลน์', 'Discard the unsaved changes?': 'ทิ้งการเปลี่ยนแปลงที่ยังไม่บันทึกใช่หรือไม่?',
     'Give the map a name (3-24 characters)': 'ตั้งชื่อแผนที่ (3-24 ตัวอักษร)', 'Terrain data is invalid': 'ข้อมูลภูมิประเทศไม่ถูกต้อง', 'Invalid map data': 'ข้อมูลแผนที่ไม่ถูกต้อง',
-    'A map needs exactly 3 start positions': 'แผนที่ต้องมีจุดเริ่มต้น 3 จุดพอดี', 'Start {n} is too close to the map edge': 'จุดเริ่ม {n} อยู่ใกล้ขอบแผนที่เกินไป',
+    'Start {n} is too close to the map edge': 'จุดเริ่ม {n} อยู่ใกล้ขอบแผนที่เกินไป',
     'Starts {a} and {b} are too close together (min {n} tiles)': 'จุดเริ่ม {a} กับ {b} อยู่ใกล้กันเกินไป (อย่างน้อย {n} ช่อง)',
     'Start {n} needs open ground around it (rock or water is in the way)': 'จุดเริ่ม {n} ต้องมีพื้นโล่งรอบตัว (มีหินหรือน้ำขวางอยู่)', 'Start {n} cannot be reached from start 1': 'เดินจากจุดเริ่ม 1 ไปจุดเริ่ม {n} ไม่ถึง',
     '{n} ore tile(s) cannot be reached by harvesters': 'แร่ {n} ช่องที่รถเก็บแร่เข้าไม่ถึง', 'There is very little ore on this map': 'แผนที่นี้มีแร่น้อยมาก', 'Start {n} has no ore within 24 tiles': 'จุดเริ่ม {n} ไม่มีแร่ในระยะ 24 ช่อง',
     'Too many neutral structures (max {n})': 'อาคารเป็นกลางมากเกินไป (สูงสุด {n})', 'Unknown neutral structure': 'อาคารเป็นกลางไม่ถูกต้อง', '{name} at {x},{y} must sit on open ground without ore': '{name} ที่ {x},{y} ต้องอยู่บนพื้นโล่งที่ไม่มีแร่',
     '{name} at {x},{y} cannot be reached': '{name} ที่ {x},{y} เดินไปไม่ถึง', 'Two neutral structures are too close together': 'อาคารเป็นกลางสองแห่งอยู่ใกล้กันเกินไป', '{name} at {x},{y} is too close to a start position': '{name} ที่ {x},{y} อยู่ใกล้จุดเริ่มต้นเกินไป',
+    'Players': 'ผู้เล่น', '3 players': '3 ผู้เล่น', '2 players (duel)': '2 ผู้เล่น (ดวล)', 'A map needs 2 or 3 start positions': 'แผนที่ต้องมีจุดเริ่มต้น 2 หรือ 3 จุด',
+    'This map is for 2 players - close a slot first': 'แผนที่นี้สำหรับ 2 ผู้เล่น - ปิดหนึ่งช่องก่อน', 'This map is for 2 players - the third slot is taken': 'แผนที่นี้สำหรับ 2 ผู้เล่น - ช่องที่ 3 มีผู้เล่นอยู่',
     'map_saved': 'บันทึกแผนที่', 'map_deleted': 'ลบแผนที่',
     'Admin only': 'เฉพาะแอดมิน', 'Sign in required': 'ต้องเข้าสู่ระบบ', '← Back to game': '← กลับไปเกม', 'Go to sign in': 'ไปหน้าเข้าสู่ระบบ',
     'Sign in on the game page with an admin account first, then reload this page.': 'เข้าสู่ระบบด้วยบัญชีแอดมินที่หน้าเกมก่อน แล้วโหลดหน้านี้ใหม่',

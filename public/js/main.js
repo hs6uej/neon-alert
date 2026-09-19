@@ -110,7 +110,7 @@
     const opts = Array.from(new Set([3000, 6000, 12000, def])).sort((a, b) => a - b);
     sel.innerHTML = ''; opts.forEach((v) => { const o = document.createElement('option'); o.value = v; o.textContent = v.toLocaleString('en-US') + (v === def ? ' (default)' : ''); sel.appendChild(o); });
     sel.value = def;
-    drawSkColors(); drawSkMaps();
+    drawSkColors(); drawSkMaps(); applySkLimits();
     show('skirmish');
   };
   $('btnHow').onclick = () => show('help');
@@ -153,7 +153,7 @@
       const cv = mapThumb(mp.id), copy = document.createElement('canvas');
       copy.width = copy.height = 96; copy.getContext('2d').drawImage(cv, 0, 0);
       b.appendChild(copy);
-      const nm = document.createElement('span'); nm.textContent = mp.name; b.appendChild(nm);
+      const nm = document.createElement('span'); nm.textContent = mp.name + (mp.players === 2 ? ' · 2P' : ''); b.appendChild(nm);
       b.title = mp.desc;
       b.disabled = !onPick;
       if (onPick) b.onclick = () => onPick(mp.id);
@@ -167,7 +167,13 @@
   // ------------------------------------------------------------ skirmish
   let skColor = 0, skMap = 'crossroads';
   try { skMap = localStorage.getItem('ga.map') || skMap; } catch (e) { /* ignore */ }
-  function drawSkMaps() { mapPicker($('skMaps'), skMap, (id) => { skMap = id; try { localStorage.setItem('ga.map', id); } catch (e) { /* ignore */ } drawSkMaps(); }); }
+  function applySkLimits() {
+    const two = GA.mapMaxPlayers(skMap) < 3;
+    $('skOpp').querySelector('option[value="2"]').disabled = two;
+    if (two) $('skOpp').value = '1';
+    $('skOpp').onchange();
+  }
+  function drawSkMaps() { mapPicker($('skMaps'), skMap, (id) => { skMap = id; try { localStorage.setItem('ga.map', id); } catch (e) { /* ignore */ } drawSkMaps(); applySkLimits(); }); }
   function drawSkColors() { swatches($('skColors'), skColor, new Set(), (i) => { skColor = i; drawSkColors(); }); }
   $('btnSkStart').onclick = () => {
     GA.Audio.init();

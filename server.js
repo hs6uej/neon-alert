@@ -569,6 +569,7 @@ class Room {
       else { const lv = s.kind === 'bot' ? s.level : this.fill; players.push({ name: 'AI ' + (players.length + 1) + ' (' + lv + ')', team: s.team, color: s.color, bot: lv }); }
     });
     if (players.length < 2) { send(this.slots[0].ws, { t: 'err', msg: 'Need at least 2 players' }); return; }
+    if (players.length > GA.mapMaxPlayers(this.map)) { send(this.slots[0].ws, { t: 'err', msg: `This map is for ${GA.mapMaxPlayers(this.map)} players - close a slot first` }); return; }
     if (new Set(players.map((p) => p.team)).size < 2) { send(this.slots[0].ws, { t: 'err', msg: 'All players are on the same team' }); return; }
     clearTimeout(this.startTimer);
     applyConfigIfIdle(); // pick up saved admin config when nothing else is running
@@ -813,6 +814,7 @@ wss.on('connection', (ws, req) => {
         const s = room.slots[i];
         if (s.kind === 'human') break;
         const keep = { team: s.team, color: s.color };
+        if (m.kind !== 'closed' && s.kind === 'closed' && room.slots.filter((x) => x.kind !== 'closed').length >= GA.mapMaxPlayers(room.map)) { send(ws, { t: 'err', msg: `This map is for ${GA.mapMaxPlayers(room.map)} players - close a slot first` }); break; }
         if (m.kind === 'open') room.slots[i] = { kind: 'open', ...keep };
         else if (m.kind === 'closed') room.slots[i] = { kind: 'closed', ...keep };
         else if (GA.BOT_LEVELS[m.kind]) room.slots[i] = { kind: 'bot', level: m.kind, name: 'AI', ...keep };
@@ -838,7 +840,24 @@ wss.on('connection', (ws, req) => {
         room.broadcastLobby();
         break;
       }
-      case 'map': if (room && !room.matchmade && room.slotOf(ws) === 0 && room.state === 'lobby' && GA.MAP_CHOICES.includes(m.id)) { room.map = m.id; room.broadcastLobby(); } break;
+      case 'map': {
+        if (!(room && !room.matchmade && room.slotOf(ws) === 0 && room.state === 'lobby' && GA.MAP_CHOICES.includes(m.id))) break;
+        const cap = GA.mapMaxPlayers(m.id);
+        const open = () => room.slots.filter((x) => x.kind !== 'closed').length;
+        if (open() > cap) {
+          const last = room.slots[2];
+          if (last.kind === 'human') { send(ws, { t: 'err', msg: `This map is for ${cap} players - the third slot is taken` }); break; }
+          room.slots[2] = { kind: 'closed', team: last.team, color: last.color };
+          room.reopenThird = true;
+        } else if (cap >= 3 && room.reopenThird && room.slots[2].kind === 'closed') {
+          const c = room.slots[2].color;
+          room.slots[2] = { kind: 'open', team: room.slots[2].team, color: room.slots.some((x, k) => k !== 2 && x.kind !== 'closed' && x.color === c) ? room.freeColor(2) : c };
+          room.reopenThird = false;
+        }
+        room.map = m.id;
+        room.broadcastLobby();
+        break;
+      }
       case 'fill': if (room && !room.matchmade && room.slotOf(ws) === 0 && GA.BOT_LEVELS[m.level]) { room.fill = m.level; room.broadcastLobby(); } break;
       case 'speed': if (room && !room.matchmade && room.slotOf(ws) === 0 && room.state === 'lobby') { room.speed = [1, 1.5, 2].includes(m.speed) ? m.speed : 1; room.broadcastLobby(); } break;
       case 'start': if (room && !room.matchmade && room.slotOf(ws) === 0) room.start(); break;

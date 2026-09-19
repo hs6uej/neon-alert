@@ -92,6 +92,8 @@ function client(token) {
     assert.strictEqual(r.body.maps.length, 1); assert.strictEqual(r.body.maps[0].name, 'Net Test Map v2'); assert(!('by' in r.body.maps[0]), 'no admin metadata leaked');
     r = await http('GET', '/api/admin/maps', null, bob);
     assert.strictEqual(r.status, 403);
+    r = await http('PUT', '/api/admin/maps', { map: { ...mapBody, name: 'Duel Test Map', starts: mapBody.starts.slice(0, 2) } }, alice);
+    assert.strictEqual(r.status, 200, 'a 2-player map is accepted'); const twoId = r.body.map.id;
     console.log('ok custom maps api');
 
     // --- lobby + rooms + colours
@@ -119,6 +121,12 @@ function client(token) {
     A.send({ t: 'map', id: customId });
     await sleep(200);
     assert.strictEqual(A.room.map, customId, 'host can pick a custom map');
+    A.send({ t: 'map', id: twoId }); await sleep(200);
+    assert.strictEqual(A.room.map, twoId); assert.strictEqual(A.room.slots[2].kind, 'closed', 'third slot closes for a 2-player map');
+    A.send({ t: 'slot', i: 2, kind: 'open' }); await sleep(200);
+    assert.strictEqual(A.room.slots[2].kind, 'closed', 'third slot cannot be reopened'); assert(A.msgs.some((m) => m.t === 'err' && /2 players/.test(m.msg)), 'host is told why');
+    A.send({ t: 'map', id: customId }); await sleep(200);
+    assert.strictEqual(A.room.slots[2].kind, 'open', 'third slot reopens for a 3-player map');
     A.send({ t: 'color', i: 0, color: 7 });
     A.send({ t: 'speed', speed: 2 });
     await sleep(200);
@@ -138,6 +146,8 @@ function client(token) {
     r = await http('POST', '/api/admin/maps/delete', { id: customId }, bob);
     assert.strictEqual(r.status, 403);
     r = await http('POST', '/api/admin/maps/delete', { id: customId }, alice);
+    assert.strictEqual(r.status, 200); assert.strictEqual(r.body.maps.length, 1);
+    r = await http('POST', '/api/admin/maps/delete', { id: twoId }, alice);
     assert.strictEqual(r.status, 200); assert.strictEqual(r.body.maps.length, 0);
     r = await http('GET', '/api/config');
     assert.strictEqual(r.body.maps.length, 0, 'deleted map no longer published');

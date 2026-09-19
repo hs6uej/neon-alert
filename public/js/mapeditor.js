@@ -26,7 +26,7 @@
 
   GA.mapEditorDirty = () => dirty;
 
-  function newState() { return { id: null, name: '', desc: '', terrain: new Uint8Array(N), ore: new Uint16Array(N), starts: [null, null, null], neutrals: [] }; }
+  function newState() { return { id: null, name: '', desc: '', players: 3, terrain: new Uint8Array(N), ore: new Uint16Array(N), starts: [null, null, null], neutrals: [] }; }
   const inside = (x, y) => x >= 1 && y >= 1 && x < W - 1 && y < H - 1;
   function clearStart(s, x, y) {
     for (let j = Math.floor(y - 11); j <= y + 11; j++) for (let i = Math.floor(x - 11); i <= x + 11; i++) {
@@ -68,20 +68,22 @@
     s.id = m.id; s.name = m.name; s.desc = m.desc || '';
     s.terrain.set(d.terrain);
     for (let i = 0; i < N; i++) s.ore[i] = Math.round(d.ore[i]);
+    s.players = d.starts.length;
     s.starts = d.starts.map((p) => ({ x: p.x, y: p.y }));
+    while (s.starts.length < 3) s.starts.push(null);
     s.neutrals = d.neutrals;
     return s;
   }
   function serialize() {
     return {
       id: st.id || undefined, name: refs.name.value, desc: refs.desc.value, terrain: GA.terrainEncode(st.terrain), ore: GA.oreEncode(st.ore),
-      starts: st.starts.every(Boolean) ? st.starts.map((p) => [p.x, p.y]) : st.starts.filter(Boolean).map((p) => [p.x, p.y]), neutrals: st.neutrals,
+      starts: st.starts.slice(0, st.players).filter(Boolean).map((p) => [p.x, p.y]), neutrals: st.neutrals,
     };
   }
 
   // ------------------------------------------------------------------ undo / redo
-  const snapshot = () => ({ t: st.terrain.slice(), o: st.ore.slice(), s: JSON.stringify(st.starts), n: JSON.stringify(st.neutrals) });
-  function restore(sn) { st.terrain.set(sn.t); st.ore.set(sn.o); st.starts = JSON.parse(sn.s); st.neutrals = JSON.parse(sn.n); }
+  const snapshot = () => ({ t: st.terrain.slice(), o: st.ore.slice(), s: JSON.stringify(st.starts), n: JSON.stringify(st.neutrals), p: st.players });
+  function restore(sn) { st.terrain.set(sn.t); st.ore.set(sn.o); st.starts = JSON.parse(sn.s); st.neutrals = JSON.parse(sn.n); st.players = sn.p; if (refs.players) refs.players.value = String(st.players); }
   function pushUndo() { undo.push(snapshot()); if (undo.length > 40) undo.shift(); redo = []; }
   function doUndo() { if (!undo.length) return; redo.push(snapshot()); restore(undo.pop()); changed(true); }
   function doRedo() { if (!redo.length) return; undo.push(snapshot()); restore(redo.pop()); changed(true); }
@@ -153,9 +155,9 @@
         const k = neutralAt(px, py); if (k >= 0) st.neutrals.splice(k, 1);
       }
     }
-    if (tool === 'start' && first && !alt && inside(x, y)) {
+    if (tool === 'start' && first && !alt && inside(x, y) && ui.startIdx < st.players) {
       const k = ui.startIdx;
-      const list = ui.sym === 'rot3' ? [[x, y], rot(x, y, (Math.PI * 2) / 3), rot(x, y, (Math.PI * 4) / 3)] : [[x, y]];
+      const list = ui.sym === 'rot3' && st.players === 3 ? [[x, y], rot(x, y, (Math.PI * 2) / 3), rot(x, y, (Math.PI * 4) / 3)] : [[x, y]];
       list.forEach(([a, b], n) => { const idx = (k + n) % 3; st.starts[idx] = { x: a, y: b }; clearStart(st, a, b); });
     }
   }
@@ -196,7 +198,7 @@
     }
     // start positions
     st.starts.forEach((p, k) => {
-      if (!p) return;
+      if (!p || k >= st.players) return;
       const cx = (p.x + 0.5) * S, cy = (p.y + 0.5) * S;
       ctx.strokeStyle = START_COLORS[k]; ctx.globalAlpha = 0.55; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(cx, cy, 10.5 * S, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
@@ -228,7 +230,7 @@
     for (const x of v.warnings) line('warn', x);
     if (!v.errors.length && !v.warnings.length) refs.checks.append(el('li', { class: 'good' }, 'Looks good - ready to save.'));
     refs.save.disabled = refs.saveNew.disabled = v.errors.length > 0;
-    refs.info.textContent = `${st.starts.filter(Boolean).length}/3 ${GA.tt('start positions')} · ${st.neutrals.length} ${GA.tt('neutral structures')}`;
+    refs.info.textContent = `${st.starts.slice(0, st.players).filter(Boolean).length}/${st.players} ${GA.tt('start positions')} · ${st.neutrals.length} ${GA.tt('neutral structures')}`;
   }
 
   // ------------------------------------------------------------------ saved maps
@@ -269,7 +271,7 @@
   function status(text, kind) { refs.status.textContent = GA.tt(text); refs.status.className = 'me-status ' + (kind || ''); }
   function setMap(s) {
     st = s; undo = []; redo = []; dirty = false;
-    refs.name.value = st.name; refs.desc.value = st.desc;
+    refs.name.value = st.name; refs.desc.value = st.desc; refs.players.value = String(st.players);
     changed(false);
     refs.title.textContent = st.id ? GA.tt('Editing') + ': ' + st.name : GA.tt('New map');
   }
@@ -309,6 +311,13 @@
     refs.checks = el('ul', { class: 'me-checks' });
     refs.list = el('div', { class: 'grid' });
     refs.coords = el('div', { class: 'me-hint', style: 'min-height:18px' }, ' ');
+    refs.players = el('select', {}, el('option', { value: '3' }, '3 players'), el('option', { value: '2' }, '2 players (duel)'));
+    refs.players.onchange = () => {
+      pushUndo();
+      st.players = +refs.players.value;
+      if (st.players === 3 && !st.starts[2]) { const a = -Math.PI / 2 + (2 * Math.PI * 2) / 3, x = Math.round(C + Math.cos(a) * 33), y = Math.round(C + Math.sin(a) * 33); st.starts[2] = { x, y }; clearStart(st, x, y); }
+      changed(true);
+    };
     refs.undo = el('button', { class: 'ghost', title: 'Ctrl+Z', onclick: doUndo }, '↶ Undo');
     refs.redo = el('button', { class: 'ghost', title: 'Ctrl+Y', onclick: doRedo }, '↷ Redo');
     const doSave = async (asNew) => {
@@ -374,7 +383,7 @@
     const left = el('div', { class: 'me-left' }, cv, refs.coords);
     const right = el('div', { class: 'me-right' },
       el('div', { class: 'me-panel' }, refs.title,
-        el('div', { class: 'me-row one' }, el('label', {}, 'Name', refs.name), el('label', {}, 'Description', refs.desc)),
+        el('div', { class: 'me-row one' }, el('label', {}, 'Name', refs.name), el('label', {}, 'Description', refs.desc), el('label', {}, 'Players', refs.players)),
         el('div', { style: 'display:flex;gap:8px;margin-top:10px;flex-wrap:wrap' }, refs.save, refs.saveNew, el('button', { class: 'ghost', onclick: () => { if (dirty && !confirm(GA.tt('Discard the unsaved changes?'))) return; setMap(blankMap()); renderSaved(api); } }, '＋ New map')),
         refs.status, refs.info),
       el('div', { class: 'me-panel' }, el('h4', {}, 'Tools'), el('div', { class: 'me-tools' }, toolBtns),
@@ -392,13 +401,13 @@
       el('div', { class: 'me-panel' }, el('h4', {}, 'Start from a template'), el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, tplSel, el('span', { class: 'me-hint', style: 'margin:0' }, 'Seed'), seed, loadTpl)),
       el('div', { class: 'me-panel' }, el('h4', {}, 'Checks'), refs.checks));
     view.append(style,
-      el('p', { class: 'note' }, 'Map editor: build a battlefield for 3 players. Maps you save appear in the map picker for Skirmish and online rooms. The outer edge is always indestructible rock; rock inside the map can be destroyed in-game.'),
+      el('p', { class: 'note' }, 'Map editor: build a battlefield for 2 or 3 players. Maps you save appear in the map picker for Skirmish and online rooms. The outer edge is always indestructible rock; rock inside the map can be destroyed in-game.'),
       el('div', { class: 'me' }, left, right),
       el('h3', { style: 'margin:26px 0 10px;color:var(--green);font-size:15px' }, 'Saved maps'), refs.list);
 
     try { saved = (await api('/api/admin/maps')).maps || []; } catch (e) { status(e.message, 'err'); saved = []; }
     if (st) {
-      refs.name.value = st.name; refs.desc.value = st.desc;
+      refs.name.value = st.name; refs.desc.value = st.desc; refs.players.value = String(st.players);
       refs.title.textContent = st.id ? GA.tt('Editing') + ': ' + st.name : GA.tt('New map');
       changed(false);
     } else setMap(blankMap());

@@ -45,7 +45,7 @@
   // Decoded copy for the simulation (fresh arrays every time - the sim mutates terrain when rocks are destroyed)
   GA.customMapData = function (cm) {
     const terrain = GA.terrainDecode(cm && cm.terrain);
-    if (!terrain || !Array.isArray(cm.starts) || cm.starts.length !== 3) return null;
+    if (!terrain || !Array.isArray(cm.starts) || cm.starts.length < 2 || cm.starts.length > 3) return null;
     const ore = new Float32Array(N);
     const ro = Array.isArray(cm.ore) ? cm.ore : [];
     for (let k = 0; k + 1 < ro.length; k += 2) if (ro[k] >= 0 && ro[k] < N) ore[ro[k]] = ro[k + 1];
@@ -58,10 +58,13 @@
     for (const m of list || []) if (m && GA.CUSTOM_MAP_ID.test(m.id)) GA.CUSTOM_MAPS[m.id] = m;
     GA.MAPS.length = 0;
     GA.MAPS.push(...GA.BASE_MAPS);
-    for (const m of Object.values(GA.CUSTOM_MAPS)) GA.MAPS.push({ id: m.id, name: m.name, desc: m.desc || '', custom: true });
+    for (const m of Object.values(GA.CUSTOM_MAPS)) GA.MAPS.push({ id: m.id, name: m.name, desc: m.desc || '', custom: true, players: m.starts.length });
     GA.MAP_CHOICES.length = 0;
     GA.MAP_CHOICES.push(...GA.MAPS.map((m) => m.id));
   };
+
+  // how many players a map holds (built-in maps: 3)
+  GA.mapMaxPlayers = (id) => (GA.CUSTOM_MAPS[id] ? GA.CUSTOM_MAPS[id].starts.length : 3);
 
   // ---- validation (used live by the editor and authoritatively by the server)
   // Returns { errors, warnings, map } - messages are { k: 'English text with {vars}', v: {vars} }; `map` is the cleaned map (only when it parsed).
@@ -85,14 +88,14 @@
 
     // start positions
     const starts = [];
-    if (!Array.isArray(raw.starts) || raw.starts.length !== 3) E('A map needs exactly 3 start positions');
+    if (!Array.isArray(raw.starts) || raw.starts.length < 2 || raw.starts.length > 3) E('A map needs 2 or 3 start positions');
     else {
       raw.starts.forEach((s, k) => {
         const x = Array.isArray(s) ? s[0] | 0 : -1, y = Array.isArray(s) ? s[1] | 0 : -1;
         if (x < 12 || y < 12 || x > W - 13 || y > H - 13) E('Start {n} is too close to the map edge', { n: k + 1 });
         starts.push([x, y]);
       });
-      for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) {
+      for (let a = 0; a < starts.length; a++) for (let b = a + 1; b < starts.length; b++) {
         if (Math.hypot(starts[a][0] - starts[b][0], starts[a][1] - starts[b][1]) < GA.MAP_LIMITS.minStartGap) E('Starts {a} and {b} are too close together (min {n} tiles)', { a: a + 1, b: b + 1, n: GA.MAP_LIMITS.minStartGap });
       }
       starts.forEach(([sx, sy], k) => {
@@ -115,7 +118,7 @@
     }
 
     // reachability (4-neighbour flood over open terrain from start 1)
-    if (!errors.length || starts.length === 3) {
+    if (starts.length >= 2) {
       const reach = new Uint8Array(N);
       const s0 = starts[0];
       if (s0 && s0[0] >= 0 && s0[1] >= 0 && s0[0] < W && s0[1] < H && terrain[s0[1] * W + s0[0]] === 0) {
