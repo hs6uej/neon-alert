@@ -232,7 +232,33 @@
         if (reach[y * W + x]) break;
       }
     }
-    return { terrain, ore, starts, mapId };
+    // neutral structures (derricks / depots) along the routes between the bases
+    const neutrals = [];
+    const reachable = flood(starts[0].x, starts[0].y);
+    const spot = (ax, ay, w, h) => {
+      for (let r = 0; r <= 10; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const x = Math.round(ax) + dx, y = Math.round(ay) + dy;
+        let ok = true;
+        for (let j = y - 1; j <= y + h && ok; j++) for (let i = x - 1; i <= x + w; i++) {
+          if (i < 2 || j < 2 || i >= W - 2 || j >= H - 2 || terrain[j * W + i] !== 0 || ore[j * W + i] > 0) { ok = false; break; }
+        }
+        if (!ok || !reachable[(y - 1) * W + x]) continue;
+        if (starts.some((s) => Math.hypot(s.x - x, s.y - y) < 14)) continue;
+        if (neutrals.some((n) => Math.abs(n.x - x) < w + 3 && Math.abs(n.y - y) < h + 3)) continue;
+        return [x, y];
+      }
+      return null;
+    };
+    for (let i = 0; i < starts.length; i++) {
+      const a = starts[i], b = starts[(i + 1) % starts.length];
+      const p = midKeep ? midKeep[i] : { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      for (const [type, f] of [['derrick', 0.28], ['depot', 0.66]]) {
+        const sp = spot(p.x + (mid.x - p.x) * f, p.y + (mid.y - p.y) * f, 2, 2);
+        if (sp) neutrals.push({ type, x: sp[0], y: sp[1] });
+      }
+    }
+    return { terrain, ore, starts, mapId, neutrals };
   }
   GA.genMap = genMap;
 
@@ -299,6 +325,11 @@
       const m = genMap(this.seed, cfg.map);
       this.mapId = m.mapId;
       this.terrain = m.terrain;
+      this.rockMax = SETTINGS.rockHp;
+      this.rockHp = new Float32Array(N);       // >0 = a destructible rock tile
+      this.rockStage = new Uint8Array(N);      // 0 intact, 1 cracked, 2 crumbling
+      this.rockEnts = new Map();               // tile -> pseudo target used by attack orders
+      for (let i = 0; i < N; i++) if (this.terrain[i] === 1 && GA.rockBreakable(i % W, (i / W) | 0)) this.rockHp[i] = this.rockMax;
       this.ore = m.ore;
       this.starts = m.starts;
       this.occ = new Int32Array(N);
@@ -343,6 +374,14 @@
           this.addUnit('trooper', i, sp[0] + 0.5, sp[1] + 0.5);
         }
       });
+      // the neutral "player" owns the unclaimed map structures; it is never alive, never plays and never counts as an enemy to auto-target
+      this.neutralId = this.players.length;
+      this.players.push({
+        id: this.neutralId, name: 'Neutral', color: -1, team: -1, neutral: true, botLevel: null, bot: null, credits: 0,
+        q: { structure: [], infantry: [], vehicle: [] }, counts: {}, pwrProd: 0, pwrUse: 0, income: 0, low: false, alive: false,
+        sw: { charge: 0, ready: false }, lastAlert: -99, lastAttacked: null, stats: { kills: 0, lost: 0, built: 0 }, speedMul: 1, incomeMul: 1, hadLow: false,
+      });
+      for (const n of m.neutrals || []) this.addBuilding(n.type, this.neutralId, n.x, n.y, { instant: true });
       this.computeCounts();
       this.players.forEach((p) => { if (p.botLevel) p.bot = new GA.Bot(this, p, p.botLevel); });
     }
@@ -371,7 +410,7 @@
       return null;
     }
     distEnt(a, b) {
-      if (b.kind === 'b') {
+      if (b.kind === 'b' || b.kind === 'r') {
         const dx = Math.max(b.bx - a.x, 0, a.x - (b.bx + b.w));
         const dy = Math.max(b.by - a.y, 0, a.y - (b.by + b.h));
         return Math.hypot(dx, dy);
@@ -432,7 +471,7 @@
       this.emit({ e: 'boom', x: e.x, y: e.y, s: big ? Math.max(e.w, e.h) * 0.9 + 0.6 : e.def.r > 0.4 ? 1.1 : 0.6, z: e.def.fly ? 1 : 0, inf: e.def.armor === 'inf' ? 1 : 0, b: big ? 1 : 0, w: big ? e.w : 0, h: big ? e.h : 0 });
       const owner = this.players[e.owner];
       owner.stats.lost++;
-      if (killer != null && killer !== e.owner && this.players[killer]) this.players[killer].stats.kills++;
+      if (killer != null && killer !== e.owner && this.players[killer] && !owner.neutral) this.players[killer].stats.kills++;
       this.removeEnt(e);
       if (big) {
         // chain damage to neighbours
@@ -544,7 +583,7 @@
       u.path = p; u.pi = 0;
     }
     goalNear(u, t) {
-      if (t.kind !== 'b') return [t.x, t.y];
+      if (t.kind !== 'b' && t.kind !== 'r') return [t.x, t.y];
       let best = null, bd = 1e9;
       for (let y = t.by - 1; y <= t.by + t.h; y++) for (let x = t.bx - 1; x <= t.bx + t.w; x++) {
         if (x >= t.bx && x < t.bx + t.w && y >= t.by && y < t.by + t.h) continue;
@@ -578,9 +617,10 @@
     }
 
     // ------------------------------------------------------------ combat
-    canTarget(a, t, w) {
+    canTarget(a, t, w, explicit) {
       if (!t || t.dead || t.hp <= 0) return false;
       if (this.players[t.owner].team === this.players[a.owner].team) return false;
+      if (!explicit && this.players[t.owner].neutral) return false;
       if (t.def.fly) return w.targets !== 'ground';
       return w.targets !== 'air';
     }
@@ -631,6 +671,50 @@
         t.order = { type: 'attack', target: attacker.id, auto: true, hx: t.x, hy: t.y };
       }
     }
+    // ---- destructible rock walls
+    rockTarget(i) {
+      let r = this.rockEnts.get(i);
+      if (!r) {
+        const x = i % W, y = (i / W) | 0;
+        r = { id: -(i + 1), kind: 'r', type: 'rock', owner: this.neutralId, x: x + 0.5, y: y + 0.5, bx: x, by: y, w: 1, h: 1, def: { r: 0.5, armor: 'bld' } };
+        this.rockEnts.set(i, r);
+      }
+      r.hp = this.rockHp[i]; r.dead = r.hp <= 0;
+      return r;
+    }
+    rockDamage(i, amount, wtype) {
+      const hp0 = this.rockHp[i];
+      if (!(hp0 > 0)) return;
+      const amt = amount * ((MULT[wtype] || MULT.pulse).bld ?? 1);
+      if (amt <= 0) return;
+      const hp = hp0 - amt, x = i % W, y = (i / W) | 0;
+      if (hp <= 0) {
+        this.rockHp[i] = 0; this.rockStage[i] = 0; this.terrain[i] = 0;
+        this.emit({ e: 'rock', i, s: 3 });
+        this.emit({ e: 'boom', x: x + 0.5, y: y + 0.5, s: 0.9, z: 0, inf: 0, b: 0, w: 0, h: 0 });
+        return;
+      }
+      this.rockHp[i] = hp;
+      const st = hp < this.rockMax * 0.34 ? 2 : hp < this.rockMax * 0.67 ? 1 : 0;
+      if (st !== this.rockStage[i]) { this.rockStage[i] = st; this.emit({ e: 'rock', i, s: st }); }
+    }
+    // blast at (x, y): rocks in range take damage with the usual falloff; `direct` is the tile that was aimed at (full effect)
+    rockBlast(x, y, R, dmg, wtype, direct, glancing) {
+      const r = Math.ceil(R);
+      for (let ty = Math.floor(y) - r; ty <= Math.floor(y) + r; ty++) {
+        if (ty < 0 || ty >= H) continue;
+        for (let tx = Math.floor(x) - r; tx <= Math.floor(x) + r; tx++) {
+          if (tx < 0 || tx >= W) continue;
+          const i = ty * W + tx;
+          if (!(this.rockHp[i] > 0)) continue;
+          const d = Math.hypot(tx + 0.5 - x, ty + 0.5 - y);
+          if (d > R + 0.5) continue;
+          this.rockDamage(i, dmg * (1 - 0.55 * Math.min(1, d / R)) * (i === direct ? 1 : glancing), wtype);
+        }
+      }
+    }
+    foe(a, b) { return this.hostile(a, b) && !this.players[b].neutral; }
+
     updateProjectiles() {
       if (!this.projs.length) return;
       const keep = [];
@@ -645,6 +729,7 @@
           const hit = (o) => {
             if (o.dead) return;
             if (this.players[o.owner].team === this.players[p.owner].team) return;
+            if (this.players[o.owner].neutral && o.id !== p.tid) return;
             if (o.def.fly && p.targets === 'ground') return;
             if (!o.def.fly && p.targets === 'air') return;
             const d = this.distEnt({ x, y }, o);
@@ -653,8 +738,11 @@
           };
           this.eachUnitNear(x, y, R + 1, hit);
           for (const b of Array.from(this.buildings.values())) hit(b);
+          if (p.targets !== 'air') this.rockBlast(x, y, R, p.dmg, p.wtype, p.tid < 0 ? -p.tid - 1 : -1, SETTINGS.rockSplash);
         } else if (t) {
           this.damage(t, p.dmg, p.wtype, p.owner, src);
+        } else if (p.tid < 0 && p.targets !== 'air') {
+          this.rockDamage(-p.tid - 1, p.dmg, p.wtype);
         }
       }
       this.projs = keep;
@@ -671,9 +759,12 @@
       const w = d.wp;
       let tgt = null;
       if (w) {
-        if (o && o.type === 'attack') {
+        if (o && o.type === 'attackRock') {
+          tgt = this.rockTarget(o.i);
+          if (tgt.dead || !this.canTarget(u, tgt, w, true)) { tgt = null; u.path = null; u.order = null; }
+        } else if (o && o.type === 'attack') {
           tgt = this.ents.get(o.target);
-          if (!tgt || !this.canTarget(u, tgt, w)) {
+          if (!tgt || !this.canTarget(u, tgt, w, !o.auto)) {
             tgt = null; u.path = null;
             if (o.auto) {
               const t2 = this.acquire(u, w, w.range + 1.5);
@@ -836,7 +927,12 @@
         this.emit({ e: 'capture', x: t.x, y: t.y, id: t.id, owner: u.owner });
         this.tellPlayer(u.owner, `${t.def.name} captured!`, 'good');
         this.tellPlayer(old, `${t.def.name} was captured!`, 'bad');
-        this.players[u.owner].stats.kills++;
+        if (!this.players[old].neutral) this.players[u.owner].stats.kills++;
+        if (t.def.bounty && !t.looted) {
+          t.looted = true;
+          this.players[u.owner].credits += t.def.bounty;
+          this.tellPlayer(u.owner, `Bonus: +${t.def.bounty} credits`, 'good');
+        }
         this.removeEnt(u);
         return;
       }
@@ -920,11 +1016,12 @@
 
     // ------------------------------------------------------------ economy / production
     computeCounts() {
-      for (const p of this.players) { p.counts = {}; p.pwrProd = 0; p.pwrUse = 0; p.blds = 0; }
+      for (const p of this.players) { p.counts = {}; p.pwrProd = 0; p.pwrUse = 0; p.blds = 0; p.income = 0; }
       for (const b of this.buildings.values()) {
         const p = this.players[b.owner];
         p.counts[b.type] = (p.counts[b.type] || 0) + 1;
-        p.blds++;
+        if (!b.def.neutral) p.blds++;
+        if (b.def.income) p.income += b.def.income;
         const pw = b.def.power;
         if (pw > 0) p.pwrProd += pw; else p.pwrUse -= pw;
       }
@@ -951,6 +1048,7 @@
     }
     updatePlayer(p, dt) {
       if (!p.alive) return;
+      if (p.income) p.credits += p.income * dt;
       const pf = p.low ? Math.max(SETTINGS.lowPowerMin, p.pwrProd / Math.max(1, p.pwrUse)) : 1;
       for (const cat of GA.CATS) {
         const q = p.q[cat];
@@ -1057,9 +1155,15 @@
           const t = this.ents.get(c.target);
           if (!t || !this.hostile(pid, t.owner)) return;
           for (const u of ownUnits(c.ids)) {
-            if (u.def.wp && this.canTarget(u, t, u.def.wp)) { u.order = { type: 'attack', target: t.id }; u.path = null; u.repath = 0; }
+            if (u.def.wp && this.canTarget(u, t, u.def.wp, true)) { u.order = { type: 'attack', target: t.id }; u.path = null; u.repath = 0; }
             else if (!u.def.wp && !u.def.capture) this.groupMove([u], t.x, t.y, 'move');
           }
+          break;
+        }
+        case 'attackRock': {
+          const tx = Math.floor(c.x), ty = Math.floor(c.y);
+          if (!(tx >= 0 && ty >= 0 && tx < W && ty < H) || !(this.rockHp[ty * W + tx] > 0)) return;
+          for (const u of ownUnits(c.ids)) if (u.def.wp && u.def.wp.targets !== 'air') { u.order = { type: 'attackRock', i: ty * W + tx }; u.path = null; u.repath = 0; u.tgt = 0; }
           break;
         }
         case 'capture': {
@@ -1229,6 +1333,7 @@
             if (d > R) continue;
             this.damage(o, SETTINGS.lanceDamage * (1 - 0.6 * (d / R)), 'shell', s.owner, null);
           }
+          this.rockBlast(s.x, s.y, R, SETTINGS.lanceDamage, 'shell', -1, 1);
         }
         this.strikes = keep;
       }
@@ -1310,7 +1415,7 @@
         w: W, h: H, seed: this.seed, starts: this.starts, mapId: this.mapId,
         terrain: Buffer_b64(this.terrain),
         ore: Array.from(this.ore, (v) => Math.round(v)),
-        players: this.players.map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team, bot: p.botLevel })),
+        players: this.players.map((p) => ({ id: p.id, name: p.name, color: p.color, team: p.team, bot: p.botLevel, neutral: !!p.neutral })),
       };
     }
   }

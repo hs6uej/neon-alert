@@ -11,6 +11,7 @@
       cost: 'Cost', time: 'Build time', hp: 'Hit points', speed: 'Speed', vision: 'Vision', power: 'Power', armor: 'Armor', builtAt: 'Built at', requires: 'Requires',
       damage: 'Damage', range: 'Range', rate: 'Fire rate', dps: 'Damage / sec', splash: 'Splash radius', targets: 'Targets', capacity: 'Ore capacity', unarmed: 'Unarmed',
       sec: 's', tps: 'tiles/s', tiles: 'tiles', none: 'None (starting building)', noBuild: 'Cannot be built',
+      income: 'Income', bounty: 'Capture bonus', neutral: 'Neutral map structure', captureHow: 'Capture with a Breach Engineer',
       ground: 'Ground only', air: 'Air only', both: 'Ground & air',
       inf: 'Infantry', light: 'Light vehicles', heavy: 'Heavy armor', bld: 'Structures', air_: 'Aircraft',
       armorName: { inf: 'Infantry', light: 'Light', heavy: 'Heavy', bld: 'Structure', air: 'Aircraft' },
@@ -21,6 +22,7 @@
       cost: 'ราคา', time: 'เวลาสร้าง', hp: 'พลังชีวิต', speed: 'ความเร็ว', vision: 'ระยะมองเห็น', power: 'ไฟฟ้า', armor: 'เกราะ', builtAt: 'สร้างจาก', requires: 'ต้องมี',
       damage: 'ความเสียหาย', range: 'ระยะยิง', rate: 'ความถี่ยิง', dps: 'ความเสียหาย/วินาที', splash: 'รัศมีระเบิด', targets: 'เป้าหมาย', capacity: 'ความจุแร่', unarmed: 'ไม่มีอาวุธ',
       sec: 'วิ', tps: 'ช่อง/วิ', tiles: 'ช่อง', none: 'ไม่ต้องมี (อาคารตั้งต้น)', noBuild: 'สร้างเองไม่ได้',
+      income: 'รายได้', bounty: 'โบนัสเมื่อยึด', neutral: 'อาคารเป็นกลางบนแผนที่', captureHow: 'ยึดด้วยวิศวกรบุกยึด',
       ground: 'พื้นดินเท่านั้น', air: 'อากาศเท่านั้น', both: 'พื้นดินและอากาศ',
       inf: 'ทหารราบ', light: 'ยานเบา', heavy: 'เกราะหนัก', bld: 'อาคาร', air_: 'อากาศยาน',
       armorName: { inf: 'ทหารราบ', light: 'เบา', heavy: 'หนัก', bld: 'อาคาร', air: 'อากาศยาน' },
@@ -156,6 +158,35 @@
       },
     },
 
+    derrick: {
+      en: {
+        what: 'An abandoned crystal-siphoning rig left on the battlefield. It belongs to nobody until someone takes it.',
+        use: 'A steady side income: every Derrick you own pays credits each second, so holding several can decide a long game.',
+        abilities: ['Neutral: it never shoots, and your units will not attack it unless you order them to', 'Right-click it with a Breach Engineer to capture it - it then pays you credits every second (see Income)', 'Combat units can also destroy it with a direct attack order', 'Enemy engineers can steal it from you', 'Does not count as a base building: you are still eliminated when your real buildings are gone'],
+        tips: 'Derricks sit on the routes between the bases, so escort your engineer. If you cannot hold one, blowing it up denies your opponent the income.',
+      },
+      th: {
+        what: 'แท่นดูดคริสตัลที่ถูกทิ้งไว้ในสนามรบ ไม่เป็นของใครจนกว่าจะมีคนมายึด',
+        use: 'รายได้เสริมที่สม่ำเสมอ แท่นขุดทุกแท่นที่คุณครอบครองจะจ่ายเงินให้ทุกวินาที การยึดหลายแท่นอาจตัดสินเกมยาวได้',
+        abilities: ['เป็นกลาง: ไม่ยิงใคร และยูนิตของคุณจะไม่ยิงมันเองถ้าไม่ได้สั่ง', 'คลิกขวาด้วยวิศวกรบุกยึดเพื่อยึด จากนั้นจะได้เงินทุกวินาที (ดู รายได้)', 'ยูนิตรบสั่งโจมตีตรงๆ เพื่อทำลายมันได้เช่นกัน', 'วิศวกรของศัตรูแย่งไปจากคุณได้', 'ไม่นับเป็นอาคารฐาน: คุณยังแพ้ได้เมื่ออาคารจริงถูกทำลายหมด'],
+        tips: 'แท่นขุดอยู่บนเส้นทางระหว่างฐาน ต้องคุ้มกันวิศวกรให้ดี ถ้ายึดไว้ไม่ไหว การทำลายทิ้งจะช่วยตัดรายได้ของคู่ต่อสู้',
+      },
+    },
+    depot: {
+      en: {
+        what: 'A neutral supply cache stuffed with spare credits.',
+        use: 'A one-time cash injection - ideal for jump-starting an expansion or a tech rush.',
+        abilities: ['Neutral: never shoots and is ignored by your army unless you order an attack', 'Capture it with a Breach Engineer to loot a one-time bonus (see Capture bonus)', 'The bonus is paid only once - recapturing it later gives nothing extra', 'Can also be destroyed with a direct attack order'],
+        tips: 'Grab it early for the biggest impact. Destroying it just wastes the loot for everyone, so capture rather than shoot when you can.',
+      },
+      th: {
+        what: 'คลังเสบียงเป็นกลางที่อัดแน่นด้วยเงินสำรอง',
+        use: 'เงินก้อนครั้งเดียว เหมาะกับการเร่งขยายฐานหรือรีบขึ้นเทค',
+        abilities: ['เป็นกลาง: ไม่ยิงใคร และกองทัพของคุณจะไม่ยิงมันถ้าไม่ได้สั่งโจมตี', 'ยึดด้วยวิศวกรบุกยึดเพื่อรับโบนัสครั้งเดียว (ดู โบนัสเมื่อยึด)', 'โบนัสจ่ายแค่ครั้งเดียว ยึดกลับมาทีหลังก็ไม่ได้เพิ่ม', 'สั่งโจมตีตรงๆ เพื่อทำลายก็ได้'],
+        tips: 'ยึดให้เร็วจะได้ผลมากที่สุด การทำลายทิ้งคือทำให้เงินหายไปเปล่าๆ ทุกฝ่าย ถ้ายึดได้ให้ยึดแทนการยิง',
+      },
+    },
+
     trooper: {
       en: {
         what: 'Basic foot soldier armed with a pulse rifle.',
@@ -188,13 +219,13 @@
       en: {
         what: 'An unarmed technician trained to seize enemy buildings.',
         use: 'Steals enemy structures instead of destroying them - turn their own base against them.',
-        abilities: ['Right-click an enemy building: the Engineer walks up and captures it on arrival', 'The building becomes yours, and it counts toward your tech tree', 'Works on any enemy structure, including production buildings, towers and the Nexus Core', 'Consumed in the process'],
+        abilities: ['Right-click an enemy building: the Engineer walks up and captures it on arrival', 'The building becomes yours, and it counts toward your tech tree', 'Works on any enemy structure, including production buildings, towers and the Nexus Core', 'Also captures neutral Crystal Derricks and Supply Depots lying around the map', 'Consumed in the process'],
         tips: 'Very fragile and unarmed, so escort them and clear defenders first. Capturing an Ore Processor steals income; capturing a tower turns it on its owner.',
       },
       th: {
         what: 'ช่างเทคนิคไม่มีอาวุธ ผู้ผ่านการฝึกมาเพื่อยึดอาคารศัตรู',
         use: 'ยึดอาคารศัตรูแทนที่จะทำลาย เปลี่ยนฐานของศัตรูให้กลับมาสู้กับเจ้าของเอง',
-        abilities: ['คลิกขวาที่อาคารศัตรู วิศวกรจะเดินไปและยึดเมื่อไปถึง', 'อาคารจะกลายเป็นของคุณ และนับรวมในสายเทคโนโลยีของคุณ', 'ยึดได้ทุกอาคารของศัตรู ทั้งอาคารผลิต ป้อม และศูนย์บัญชาการ', 'วิศวกรจะถูกใช้หมดไปเมื่อยึดสำเร็จ'],
+        abilities: ['คลิกขวาที่อาคารศัตรู วิศวกรจะเดินไปและยึดเมื่อไปถึง', 'อาคารจะกลายเป็นของคุณ และนับรวมในสายเทคโนโลยีของคุณ', 'ยึดได้ทุกอาคารของศัตรู ทั้งอาคารผลิต ป้อม และศูนย์บัญชาการ', 'ยึดอาคารเป็นกลางบนแผนที่ได้ด้วย ทั้งแท่นขุดคริสตัลและคลังเสบียง', 'วิศวกรจะถูกใช้หมดไปเมื่อยึดสำเร็จ'],
         tips: 'เปราะบางและไม่มีอาวุธ ต้องมีกำลังคุ้มกันและกำจัดตัวป้องกันก่อน ยึดโรงกลั่นแร่เพื่อแย่งรายได้ ยึดป้อมเพื่อหันปากกระบอกกลับไปยิงเจ้าของเดิม',
       },
     },
@@ -337,12 +368,14 @@
   function statTiles(type, T) {
     const d = GA.DEFS[type], out = [];
     const add = (label, value, cls) => out.push([label, value, cls]);
-    add(T.cost, '◈ ' + d.cost.toLocaleString('en-US'));
+    if (!d.neutral) add(T.cost, '◈ ' + d.cost.toLocaleString('en-US'));
+    if (d.income) add(T.income, '+' + d.income + ' ◈/' + T.sec, 'good');
+    if (d.bounty) add(T.bounty, '◈ ' + d.bounty.toLocaleString('en-US'), 'good');
     if (d.time) add(T.time, d.time + ' ' + T.sec);
     add(T.hp, d.hp.toLocaleString('en-US'));
     if (d.kind === 'u') add(T.speed, trim(d.speed) + ' ' + T.tps);
     add(T.vision, trim(d.vision) + ' ' + T.tiles);
-    if (d.kind === 'b') add(T.power, d.power > 0 ? '+' + d.power : d.power < 0 ? '−' + Math.abs(d.power) : '0', d.power > 0 ? 'good' : d.power < 0 ? 'bad' : '');
+    if (d.kind === 'b' && !d.neutral) add(T.power, d.power > 0 ? '+' + d.power : d.power < 0 ? '−' + Math.abs(d.power) : '0', d.power > 0 ? 'good' : d.power < 0 ? 'bad' : '');
     add(T.armor, T.armorName[d.armor] || d.armor);
     if (d.harvester) add(T.capacity, d.capacity);
     const wp = d.weapon ? GA.WEAPONS[d.weapon] : null;
@@ -361,6 +394,7 @@
 
   function requiresText(type, T) {
     const d = GA.DEFS[type];
+    if (d.neutral) return T.captureHow;
     if (d.buildable === false) return T.noBuild;
     const parts = (d.req || []).map(nameOf);
     return parts.length ? parts.join(', ') : T.none;
@@ -409,7 +443,7 @@
     const meta = el('div', 'gmeta');
     meta.appendChild(el('span', null, GA.tt(GA.CAT_LABEL[d.cat])));
     const at = builtAt(type);
-    meta.appendChild(el('span', null, at ? T.builtAt + ': ' + at : T.noBuild));
+    meta.appendChild(el('span', null, at ? T.builtAt + ': ' + at : d.neutral ? T.neutral : T.noBuild));
     title.appendChild(meta);
     head.appendChild(title);
     host.appendChild(head);

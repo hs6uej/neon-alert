@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/headless.js"
+    "test": "node test/headless.js && node test/destructible.js"
   },
   "dependencies": {
     "ws": "^8.18.0"

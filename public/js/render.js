@@ -25,6 +25,7 @@
     return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
   }
   GA.hash = hash;
+  GA.rockHeight = (x, y) => 0.35 + hash(x * 3, y * 5) * 1.0;
 
   const glowCache = new Map();
   function glowSprite(color) {
@@ -268,6 +269,34 @@
           ctx.fillStyle = g; ctx.fillRect(tip[0] - 5 * v.zoom, tip[1] - 400, 10 * v.zoom, 400);
           ctx.globalCompositeOperation = 'source-over';
         }
+        break;
+      }
+      case 'derrick': {
+        boxA(v, bx, by, w, h, 0, 0.16, dark, '#1f2a3c');
+        boxA(v, bx + 0.12, by + 0.12, w - 0.24, h - 0.24, 0.16, 0.1, mid, light);
+        cyl(v, cx, cy, 0.42, 0.26, 0.3, '#2f3f5c');
+        // crystal cluster
+        for (let k = 0; k < 4; k++) {
+          const a = k * 1.7 + 0.5, px = cx + Math.cos(a) * (k ? 0.3 : 0), py = cy + Math.sin(a) * (k ? 0.3 : 0), hh = k ? 0.55 + 0.12 * k : 1.05;
+          const b0 = P(v, px, py, 0.5), t0 = P(v, px, py, 0.5 + hh), ww = (k ? 6 : 8) * v.zoom;
+          ctx.fillStyle = shade('#34d399', 0.55);
+          ctx.beginPath(); ctx.moveTo(b0[0] - ww, b0[1]); ctx.lineTo(t0[0], t0[1]); ctx.lineTo(b0[0], b0[1] + 3 * v.zoom); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = '#6ee7b7';
+          ctx.beginPath(); ctx.moveTo(b0[0] + ww, b0[1]); ctx.lineTo(t0[0], t0[1]); ctx.lineTo(b0[0], b0[1] + 3 * v.zoom); ctx.closePath(); ctx.fill();
+        }
+        glow(ctx, ...P(v, cx, cy, 1.0), 22 * v.zoom * (0.75 + 0.35 * pulse), '#34d399', 0.45);
+        for (const [px, py] of [[bx + 0.18, by + 0.18], [bx + w - 0.42, by + 0.18], [bx + 0.18, by + h - 0.42], [bx + w - 0.42, by + h - 0.42]]) boxA(v, px, py, 0.24, 0.24, 0.26, 0.28, col.dark, col.main);
+        break;
+      }
+      case 'depot': {
+        boxA(v, bx, by, w, h, 0, 0.12, dark, '#1f2a3c');
+        boxA(v, bx + 0.12, by + 0.15, 0.86, 0.8, 0.12, 0.5, '#5b4a2a', '#8a6f3b');
+        boxA(v, bx + 1.02, by + 0.2, 0.8, 0.7, 0.12, 0.34, '#4a3d24', '#75602f');
+        boxA(v, bx + 0.3, by + 1.05, 0.9, 0.75, 0.12, 0.42, '#5b4a2a', '#8a6f3b');
+        boxA(v, bx + 0.42, by + 0.3, 0.6, 0.55, 0.62, 0.28, '#6a5630', '#a3833f');
+        line3(v, P(v, bx + 0.12, by + 0.95, 0.4), P(v, bx + 0.98, by + 0.95, 0.4), col.main, 1.6 * v.zoom);
+        line3(v, P(v, bx + 0.3, by + 1.8, 0.35), P(v, bx + 1.2, by + 1.8, 0.35), col.main, 1.6 * v.zoom);
+        glow(ctx, ...P(v, bx + 1.3, by + 1.3, 0.7), 12 * v.zoom * (0.7 + 0.5 * pulse), '#facc15', 0.5);
         break;
       }
     }
@@ -567,7 +596,7 @@
       const hv = g.ents.get(g.hoverId);
       if (hv && !g.sel.has(hv.id) && !hv.ghost) {
         const hostile = hv.owner !== g.me && g.players[hv.owner].team !== g.myTeam;
-        const col = hostile ? '#ff4d6d' : '#7dd3fc';
+        const col = g.players[hv.owner].neutral ? '#facc15' : hostile ? '#ff4d6d' : '#7dd3fc';
         if (hv.isB) {
           const pts = [P(v, hv.bx, hv.by, 0), P(v, hv.bx + hv.w, hv.by, 0), P(v, hv.bx + hv.w, hv.by + hv.h, 0), P(v, hv.bx, hv.by + hv.h, 0)];
           poly(ctx, pts, null, col, 1.6);
@@ -621,16 +650,31 @@
       for (const e of air) this.drawBar(g, e, now);
     }
     drawRock(g, x, y) {
-      const v = this.v;
+      const v = this.v, ctx = this.ctx;
       const hv = hash(x, y);
-      const h = 0.35 + hash(x * 3, y * 5) * 1.0;
-      const base = this.rockCols[(hv * 4) | 0];
+      const st = g.rockStage[y * W + x];
+      const h = GA.rockHeight(x, y) * (1 - 0.13 * st);
+      const n0 = parseInt(this.rockCols[(hv * 4) | 0].slice(1), 16), dim = 1 - 0.1 * st;
+      const ch = (sh) => Math.max(0, Math.min(255, Math.round(((n0 >> sh) & 255) * dim)));
+      const base = '#' + ((1 << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).slice(1);
       boxA(v, x + 0.04, y + 0.04, 0.92, 0.92, 0, h, base, shade(base, 1.35));
-      if (hv > 0.6) {
+      if (hv > 0.6 && st < 2) {
         const inset = 0.2 + (hv - 0.6);
         boxA(v, x + inset, y + inset, 0.92 - inset * 2 + 0.08, 0.92 - inset * 2 + 0.08, h, 0.14 + hv * 0.2, shade(base, 1.1), shade(base, 1.5));
       }
-      if (hv > 0.9) glow(this.ctx, ...P(v, x + 0.5, y + 0.5, h + 0.1), 10 * v.zoom, '#7c9cff', 0.4);
+      if (st) {
+        for (let k = 0; k < st * 2 + 1; k++) {
+          const a = P(v, x + 0.15 + hash(x + k, y * 3) * 0.7, y + 0.15 + hash(x * 5, y + k) * 0.7, h);
+          const b = P(v, x + 0.15 + hash(x * 7 + k, y) * 0.7, y + 0.15 + hash(x, y * 11 + k) * 0.7, h);
+          line3(v, a, b, 'rgba(6,10,18,0.85)', 1.6 * v.zoom);
+        }
+        if (st > 1) glow(ctx, ...P(v, x + 0.5, y + 0.5, h * 0.6), 12 * v.zoom, '#ff9a3c', 0.32);
+      }
+      if (hv > 0.9 && !st) glow(ctx, ...P(v, x + 0.5, y + 0.5, h + 0.1), 10 * v.zoom, '#7c9cff', 0.4);
+      if (g.hoverRock === y * W + x && g.selUnits().some((u) => u.def.wp)) {
+        const pts = [P(v, x, y, h), P(v, x + 1, y, h), P(v, x + 1, y + 1, h), P(v, x, y + 1, h)];
+        poly(ctx, pts, 'rgba(255,77,109,0.22)', '#ff4d6d', 1.8);
+      }
     }
     drawEnt(g, e, now) {
       const ctx = this.ctx, v = this.v;

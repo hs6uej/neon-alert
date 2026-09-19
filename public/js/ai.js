@@ -93,7 +93,7 @@
       let dir = [0, 0];
       if (type === 'turret') {
         let bd = 1e9, e = null;
-        for (const b of s.buildings.values()) if (s.hostile(this.p.id, b.owner)) {
+        for (const b of s.buildings.values()) if (s.foe(this.p.id, b.owner)) {
           const d = (b.x - base.x) ** 2 + (b.y - base.y) ** 2;
           if (d < bd) { bd = d; e = b; }
         }
@@ -249,9 +249,9 @@
       if (p.sw.ready) {
         let best = null, bs = -1;
         for (const b of s.buildings.values()) {
-          if (!s.hostile(p.id, b.owner)) continue;
+          if (!s.foe(p.id, b.owner)) continue;
           let n = 0;
-          for (const o of s.buildings.values()) if (s.hostile(p.id, o.owner) && Math.hypot(o.x - b.x, o.y - b.y) < 4.5) n++;
+          for (const o of s.buildings.values()) if (s.foe(p.id, o.owner) && Math.hypot(o.x - b.x, o.y - b.y) < 4.5) n++;
           n += b.type === 'conyard' ? 1 : 0;
           if (n > bs) { bs = n; best = b; }
         }

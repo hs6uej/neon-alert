@@ -8,7 +8,7 @@
 
   // Snapshot of the built-in defaults, taken before any override is applied.
   GA.BASE = { defs: {}, weapons: clone(GA.WEAPONS), mult: clone(GA.MULT), bots: clone(GA.BOT_LEVELS), settings: clone(GA.SETTINGS) };
-  const DEF_FIELDS = ['name', 'desc', 'cost', 'time', 'hp', 'speed', 'power', 'vision', 'armor', 'weapon', 'req', 'capacity'];
+  const DEF_FIELDS = ['name', 'desc', 'cost', 'time', 'hp', 'speed', 'power', 'vision', 'armor', 'weapon', 'req', 'capacity', 'income', 'bounty'];
   for (const t of GA.TYPES) {
     const d = GA.DEFS[t], b = {};
     for (const f of DEF_FIELDS) if (d[f] !== undefined) b[f] = clone(d[f]);
@@ -35,6 +35,8 @@
       weapon: { t: 'enum', values: [''].concat(Object.keys(GA.WEAPONS)), label: 'Weapon' },
       req: { t: 'req', label: 'Requires (comma separated buildings)' },
       capacity: num(100, 5000, 50, 'Ore capacity'),
+      income: num(0, 500, 1, 'Income (credits/s when owned)'),
+      bounty: num(0, 20000, 50, 'Capture bonus (credits)'),
     },
     weapons: {
       dmg: num(0, 5000, 1, 'Damage'),
@@ -68,6 +70,8 @@
       buildRadius: num(1, 12, 1, 'Build radius (tiles)'),
       lowPowerMin: num(0.05, 1, 0.05, 'Min. production speed on low power'),
       multiProdBonus: num(0, 2, 0.05, 'Bonus per extra Barracks / Forge'),
+      rockHp: num(50, 20000, 50, 'Rock wall hit points'),
+      rockSplash: num(0, 1, 0.05, 'Splash damage to rocks (fraction)'),
     },
   };
 

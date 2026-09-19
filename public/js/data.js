@@ -20,10 +20,13 @@
   // Colours indexed by *player id* for the running game (filled by GA.setOwnerColors at game start).
   // The array identity never changes so modules may keep a reference to it.
   GA.PLAYER_COLORS = GA.PALETTE.slice(0, 3);
+  GA.NEUTRAL_COLOR = { name: 'Neutral', main: '#94a3b8', dark: mix('#94a3b8', [0, 0, 0], 0.45), light: mix('#94a3b8', [255, 255, 255], 0.65) };
   GA.setOwnerColors = function (players) {
     GA.PLAYER_COLORS.length = 0;
-    for (const p of players) GA.PLAYER_COLORS.push(GA.PALETTE[p.color % GA.PALETTE.length]);
+    for (const p of players) GA.PLAYER_COLORS.push(p.neutral ? GA.NEUTRAL_COLOR : GA.PALETTE[p.color % GA.PALETTE.length]);
   };
+  // Rock tiles inside the map can be destroyed; the outermost tiles never can.
+  GA.rockBreakable = (x, y) => x >= 2 && y >= 2 && x < GA.W - 2 && y < GA.H - 2;
 
   // Global tunables (editable in the admin page)
   GA.SETTINGS = {
@@ -39,6 +42,8 @@
     buildRadius: 4,       // tiles from an existing building where new structures may be placed
     lowPowerMin: 0.3,     // minimum production speed when power is short
     multiProdBonus: 0.4,  // extra speed per additional Barracks / Forge
+    rockHp: 700,          // hit points of a destructible rock tile
+    rockSplash: 0.35,     // fraction of splash damage that chips nearby rocks
   };
 
   // weapon class -> armor class damage multipliers
@@ -76,6 +81,9 @@
     techlab: { kind: 'b', name: 'Quantum Lab', cat: 'structure', w: 2, h: 2, hp: 900, cost: 1500, time: 24, power: -60, vision: 7, armor: 'bld', req: ['radar'], desc: 'Unlocks elite tech and the Orbital Uplink.' },
     turret: { kind: 'b', name: 'Pulse Tower', cat: 'structure', w: 1, h: 1, hp: 650, cost: 600, time: 12, power: -20, vision: 9, armor: 'bld', weapon: 'tower', req: ['barracks'], desc: 'Defensive tower. Hits ground and air. Needs power.' },
     uplink: { kind: 'b', name: 'Orbital Uplink', cat: 'structure', w: 3, h: 3, hp: 1200, cost: 3500, time: 40, power: -150, vision: 7, armor: 'bld', req: ['techlab'], desc: 'Superweapon: calls down an Orbital Lance.' },
+    // ---------- neutral map structures (start unowned; capture with a Breach Engineer or blow up)
+    derrick: { kind: 'b', name: 'Crystal Derrick', cat: 'structure', w: 2, h: 2, hp: 900, cost: 500, time: 0, power: 0, vision: 6, armor: 'bld', req: [], buildable: false, neutral: true, income: 6, desc: 'Neutral tech site. Capture it to earn credits every second.' },
+    depot: { kind: 'b', name: 'Supply Depot', cat: 'structure', w: 2, h: 2, hp: 700, cost: 300, time: 0, power: 0, vision: 6, armor: 'bld', req: [], buildable: false, neutral: true, bounty: 1500, desc: 'Neutral supply cache. Capture it for a one-time cash bonus.' },
 
     // ---------- infantry ----------
     trooper: { kind: 'u', name: 'Pulse Trooper', cat: 'infantry', cost: 100, time: 5, hp: 100, speed: 2.4, armor: 'inf', weapon: 'pulse', vision: 7, r: 0.22, req: ['barracks'], desc: 'Cheap all-round infantry.' },

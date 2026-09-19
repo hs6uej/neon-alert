@@ -93,10 +93,11 @@
       card.append(el('h3', {}, GA.BASE.defs[t].name, el('small', {}, t), resetBtn('defs', t, () => defCards(kind))));
       const fields = el('div', { class: 'fields' });
       const list = kind === 'b'
-        ? ['name', 'cost', 'time', 'hp', 'power', 'vision', 'armor', 'weapon', 'req', 'desc']
+        ? ['name', 'cost', 'time', 'hp', 'power', 'vision', 'armor', 'weapon', 'income', 'bounty', 'req', 'desc']
         : ['name', 'cost', 'time', 'hp', 'speed', 'vision', 'armor', 'weapon', 'capacity', 'req', 'desc'];
       for (const f of list) {
         if (f === 'capacity' && !d.harvester) continue;
+        if ((f === 'income' || f === 'bounty') && d[f] === undefined) continue;
         if (f === 'time' && t === 'conyard') continue;
         if (f === 'req' && t === 'conyard') continue;
         fields.append(field('defs', t, f, S.defs[f]));

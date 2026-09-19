@@ -33,7 +33,7 @@ for (let i = 0; i < total; i++) {
   if (d > worst) worst = d;
   if (i % 20 === 0) sim.flush([]);
   if (i % (20 * 60) === 0) {
-    const line = sim.players.map((p) => {
+    const line = sim.players.filter((p) => !p.neutral).map((p) => {
       let u = 0, hv = 0;
       for (const e of sim.units.values()) if (e.owner === p.id) { if (e.def.harvester) hv++; else u++; }
       return `P${p.id}[${p.alive ? 'ok' : 'DEAD'}] cr=${Math.floor(p.credits)} pw=${p.pwrProd}/${p.pwrUse} bld=${p.blds} army=${u} hv=${hv} k=${p.stats.kills}`;

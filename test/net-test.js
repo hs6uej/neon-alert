@@ -101,7 +101,8 @@ function client(token) {
     A.send({ t: 'start' });
     await sleep(1500);
     assert(A.start && Bc.start, 'both started');
-    assert.deepStrictEqual(A.start.map.players.map((p) => p.color), [7, 5, 2]);
+    assert.deepStrictEqual(A.start.map.players.filter((p) => !p.neutral).map((p) => p.color), [7, 5, 2]);
+    assert.strictEqual(A.start.map.players.filter((p) => p.neutral).length, 1, 'start info carries the neutral owner of map structures');
     assert.deepStrictEqual(A.start.map.players.map((p) => p.name).slice(0, 2), ['Alice', 'Bob']);
     assert.strictEqual(A.start.map.mapId, 'isles', 'game uses the chosen map');
     assert.strictEqual(A.start.config.settings.startCredits, 9999, 'config sent with start');

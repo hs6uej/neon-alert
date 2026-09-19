@@ -6,7 +6,7 @@
   const N = W * H;
   const Audio = GA.Audio;
 
-  const B_HEIGHT = { conyard: 2.1, power: 1.1, refinery: 1.5, barracks: 0.9, factory: 1.6, radar: 1.6, techlab: 1.4, turret: 0.85, uplink: 2.8 };
+  const B_HEIGHT = { conyard: 2.1, power: 1.1, refinery: 1.5, barracks: 0.9, factory: 1.6, radar: 1.6, techlab: 1.4, turret: 0.85, uplink: 2.8, derrick: 1.5, depot: 0.9 };
 
   function angLerp(a, b, t) {
     let d = b - a;
@@ -20,6 +20,8 @@
       this.ui = ui; this.r = renderer; this.canvas = canvas; this.transport = transport;
       this.map = start.map;
       this.terrain = GA.b64decode(start.map.terrain);
+      this.rockStage = new Uint8Array(N);
+      this.hoverRock = -1;
       this.ore = Float32Array.from(start.map.ore);
       this.players = start.map.players;
       GA.setOwnerColors(this.players);
@@ -219,6 +221,10 @@
           break;
         }
         case 'boom': this.explosion(ev, now); break;
+        case 'rock':
+          this.rockStage[ev.i] = ev.s === 3 ? 0 : ev.s;
+          if (ev.s === 3) { this.terrain[ev.i] = 0; this.miniDirty = true; }
+          break;
         case 'spawn': {
           fx.spawn.set(ev.id, now);
           const col = PLAYER_COLORS[ev.owner].main;
@@ -400,19 +406,31 @@
 
     // ------------------------------------------------------------ picking
     screenToWorld(sx, sy) { this.r.setView(this.cam); return this.r.toWorld(sx, sy); }
+    hitBox(bx, by, w, h, hh, sx, sy) {
+      const v = this.r.v, P = GA.drawHelpers.P;
+      const pts = [P(v, bx, by, hh), P(v, bx + w, by, hh), P(v, bx + w, by, 0), P(v, bx + w, by + h, 0), P(v, bx, by + h, 0), P(v, bx, by + h, hh)];
+      let inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
+        if ((yi > sy) !== (yj > sy) && sx < ((xj - xi) * (sy - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    }
+    pickRock(sx, sy, wx, wy) {
+      const x0 = Math.floor(wx), y0 = Math.floor(wy);
+      let best = -1, bd = -1;
+      for (let y = y0 - 1; y <= y0 + 3; y++) for (let x = x0 - 1; x <= x0 + 3; x++) {
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const i = y * W + x;
+        if (this.terrain[i] !== 1 || !GA.rockBreakable(x, y) || !this.hitBox(x, y, 1, 1, GA.rockHeight(x, y), sx, sy)) continue;
+        if (x + y > bd) { bd = x + y; best = i; }
+      }
+      return best;
+    }
     hitEnt(e, sx, sy) {
       const v = this.r.v, P = GA.drawHelpers.P;
       if (e.ghost) return false;
-      if (e.isB) {
-        const hh = B_HEIGHT[e.type] || 1;
-        const pts = [P(v, e.bx, e.by, hh), P(v, e.bx + e.w, e.by, hh), P(v, e.bx + e.w, e.by, 0), P(v, e.bx + e.w, e.by + e.h, 0), P(v, e.bx, e.by + e.h, 0), P(v, e.bx, e.by + e.h, hh)];
-        let inside = false;
-        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-          const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
-          if ((yi > sy) !== (yj > sy) && sx < ((xj - xi) * (sy - yi)) / (yj - yi) + xi) inside = !inside;
-        }
-        return inside;
-      }
+      if (e.isB) return this.hitBox(e.bx, e.by, e.w, e.h, B_HEIGHT[e.type] || 1, sx, sy);
       const alt = e.def.fly ? 1.6 : 0;
       const [cx, cy] = P(v, e.rx, e.ry, alt);
       const inf = e.def.cat === 'infantry';
@@ -434,6 +452,8 @@
       this.hoverId = e ? e.id : 0;
       const [wx, wy] = this.screenToWorld(this.mouse.sx, this.mouse.sy);
       this.mouse.wx = wx; this.mouse.wy = wy;
+      this.hoverRock = !e && !this.placing && !this.mode ? this.pickRock(this.mouse.sx, this.mouse.sy, wx, wy) : -1;
+      if (this.mode === 'amove' && !e) this.hoverRock = this.pickRock(this.mouse.sx, this.mouse.sy, wx, wy);
       if (this.placing) {
         const d = DEFS[this.placing.type];
         this.placing.tx = Math.round(wx - d.w / 2); this.placing.ty = Math.round(wy - d.h / 2);
@@ -448,7 +468,7 @@
       else if (this.placing) cur = 'cur-default';
       else if (selUnits.length) {
         if (e && this.isEnemy(e) && !e.ghost) cur = 'cur-attack';
-        else if (!e) cur = 'cur-move';
+        else if (!e) cur = this.hoverRock >= 0 && selUnits.some((u) => u.def.wp) ? 'cur-attack' : 'cur-move';
       }
       if (this.canvas.dataset.cur !== cur) { this.canvas.dataset.cur = cur; this.canvas.className = cur; }
     }
@@ -469,7 +489,7 @@
     setMode(m) { this.mode = m; this.ui.syncTools(this); if (m) this.placing = null; this.updateHover(); }
     startPlacing(type) { this.placing = { type, tx: null, ty: null, ok: false }; this.setMode(null); this.placing = { type, tx: null, ty: null, ok: false }; this.updateHover(); }
     mark(x, y, kind) { this.orderMarks.push({ x, y, t0: performance.now() / 1000, kind }); }
-    orderAt(wx, wy, target, shift) {
+    orderAt(wx, wy, target, shift, rock = -1) {
       const units = this.selUnits();
       if (!units.length) {
         const bs = this.selBuildings().filter((b) => b.type === 'barracks' || b.type === 'factory');
@@ -485,6 +505,15 @@
         if (other.length) this.send({ type: 'attack', ids: other, target: target.id });
         else if (!target.isB && eng.length) this.send({ type: 'move', ids: eng, x: target.rx, y: target.ry });
         this.mark(target.isB ? target.x : target.rx, target.isB ? target.y : target.ry, 'attack');
+        Audio.play('order', 0.8);
+        return;
+      }
+      if (rock >= 0) {
+        const canBreak = (u) => u.def.wp && u.def.wp.targets !== 'air';
+        const armed = units.filter(canBreak).map((u) => u.id), rest = units.filter((u) => !canBreak(u)).map((u) => u.id);
+        if (armed.length) this.send({ type: 'attackRock', ids: armed, x: rock % W, y: (rock / W) | 0 });
+        if (rest.length) this.send({ type: 'move', ids: rest, x: wx, y: wy });
+        this.mark((rock % W) + 0.5, ((rock / W) | 0) + 0.5, 'attack');
         Audio.play('order', 0.8);
         return;
       }
@@ -569,7 +598,8 @@
       }
       if (this.mode === 'amove') {
         const ids = this.selUnits().map((u) => u.id);
-        if (ids.length) { this.send({ type: 'amove', ids, x: wx, y: wy }); this.mark(wx, wy, 'attack'); Audio.play('order', 0.8); }
+        if (this.hoverRock >= 0) this.orderAt(wx, wy, null, shift, this.hoverRock);
+        else if (ids.length) { this.send({ type: 'amove', ids, x: wx, y: wy }); this.mark(wx, wy, 'attack'); Audio.play('order', 0.8); }
         this.setMode(null);
         return;
       }
@@ -615,6 +645,8 @@
           } else if (shift) { if (this.sel.has(e.id)) this.sel.delete(e.id); else { if (e.isB) this.sel.clear(); this.sel.add(e.id); } }
           else { this.sel.clear(); this.sel.add(e.id); }
           Audio.play('select', 0.7);
+        } else if (e && this.players[e.owner].neutral && !this.selUnits().length) {
+          this.sel.clear(); this.sel.add(e.id); Audio.play('select', 0.7);
         } else if (e && this.isEnemy(e)) {
           // enemy click with units selected = attack
           if (this.selUnits().length) this.orderAt(this.mouse.wx, this.mouse.wy, e, shift);
@@ -628,7 +660,7 @@
       if (this.mode) { this.setMode(null); return; }
       const e = this.hoverId ? this.ents.get(this.hoverId) : null;
       const wx = Math.max(1, Math.min(W - 1, this.mouse.wx)), wy = Math.max(1, Math.min(H - 1, this.mouse.wy));
-      this.orderAt(wx, wy, e, shift);
+      this.orderAt(wx, wy, e, shift, e ? -1 : this.hoverRock);
     }
     keyDown(e) {
       if (this.ui.typing()) return;

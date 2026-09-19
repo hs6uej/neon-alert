@@ -216,6 +216,7 @@
     buildPlayers(g) {
       this.el.players.innerHTML = '';
       this.playerEls = g.players.map((p) => {
+        if (p.neutral) return null;
         const d = document.createElement('div');
         d.className = 'pl';
         d.innerHTML = `<i style="background:${PLAYER_COLORS[p.id].main}"></i><span></span><em></em>`;
@@ -250,7 +251,7 @@
         this.el.sw.onclick = () => { if (g.swReady) { g.setMode('sw'); this.toast('Choose a target', 'info'); } };
       }
       // players
-      if (this.playerEls && g.pl) g.players.forEach((p, i) => { this.playerEls[i].classList.toggle('dead', !g.pl[i][0]); this.playerEls[i].children[2].textContent = g.pl[i][1] ? '☠' + g.pl[i][1] : ''; });
+      if (this.playerEls && g.pl) g.players.forEach((p, i) => { if (!this.playerEls[i]) return; this.playerEls[i].classList.toggle('dead', !g.pl[i][0]); this.playerEls[i].children[2].textContent = g.pl[i][1] ? '☠' + g.pl[i][1] : ''; });
       this.renderSel(g);
     }
     selectionChanged(g) { this.selSig = ''; this.renderSel(g); }
@@ -271,7 +272,7 @@
         el.innerHTML = `<div class="one"><div class="nm"></div><div class="hpbar"><i style="width:${Math.floor(f * 100)}%;background:${f > 0.6 ? '#4ade80' : f > 0.3 ? '#facc15' : '#f43f5e'}"></i></div><div class="hp">${Math.floor(e.hp)} / ${e.mhp}</div><div class="desc"></div><div class="desc hint"></div><div class="acts"></div></div>`;
         el.querySelector('.nm').textContent = e.def.name;
         el.querySelector('.desc').textContent = e.def.desc || '';
-        el.querySelector('.hint').textContent = prodB ? 'Right-click the ground to set a rally point.' : '';
+        el.querySelector('.hint').textContent = prodB && e.owner === g.me ? 'Right-click the ground to set a rally point.' : g.players[e.owner].neutral ? 'Neutral structure: capture it with a Breach Engineer, or destroy it.' : '';
         const acts = el.querySelector('.acts');
         if (e.owner === g.me) {
           const b1 = document.createElement('button'); b1.textContent = e.repair ? '🔧 Repairing…' : '🔧 Repair (R)'; b1.onclick = () => g.send({ type: 'repair', id: e.id }); acts.appendChild(b1);

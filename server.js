@@ -586,7 +586,7 @@ class Room {
       else if (quit != null) t = Math.min(quit, p.elimAt != null ? p.elimAt : Infinity);
       else t = p.elimAt != null ? p.elimAt : 0;
       return { i, p, user: this.playerNames[i], quit, t };
-    });
+    }).filter((x) => !x.p.neutral);
     info.forEach((x) => { x.place = 1 + info.filter((o) => o.t > x.t).length; });
     const humans = info.filter((x) => x.user && db.users[x.user.toLowerCase()]);
     const ranked = this.ranked && humans.length >= 2;
