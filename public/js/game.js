@@ -35,6 +35,7 @@
       this.placing = null;
       this.drag = null;
       this.mouse = { sx: 0, sy: 0, wx: null, wy: null, in: false };
+      this.edge = { x: 0, y: 0, on: false }; // pointer position relative to the whole window, for edge scrolling
       this.keys = new Set();
       this.orderMarks = [];
       this.pings = [];
@@ -373,13 +374,17 @@
       if (k.has('ArrowRight')) sx += 1;
       if (k.has('ArrowUp')) sy -= 1;
       if (k.has('ArrowDown')) sy += 1;
-      if (this.mouse.in && this.mouse.moved && !this.drag && !this.midDrag) {
-        const m = this.mouse, w = this.r.w, h = this.r.h, edge = 10;
-        if (m.sx <= edge) sx -= 1; else if (m.sx >= w - edge) sx += 1;
-        if (m.sy <= edge) sy -= 1; else if (m.sy >= h - edge) sy += 1;
+      let speed = 1;
+      if (!sx && !sy && this.edge.on && !this.drag && !this.midDrag && !document.querySelector('#pauseMenu:not(.hidden), #endScreen:not(.hidden)')) {
+        // the zone is measured from the window edge (HUD panels do not block it); speed ramps up towards the edge
+        const zone = 22, w = this.r.w, h = this.r.h, e = this.edge;
+        const ramp = (d) => (d >= zone ? 0 : 0.4 + 0.6 * (1 - Math.max(0, d) / zone));
+        sx = e.x < zone ? -ramp(e.x) : w - 1 - e.x < zone ? ramp(w - 1 - e.x) : 0;
+        sy = e.y < zone ? -ramp(e.y) : h - 1 - e.y < zone ? ramp(h - 1 - e.y) : 0;
+        speed = Math.max(Math.abs(sx), Math.abs(sy));
       }
       if (sx || sy) {
-        const sp = 26 * dt / Math.sqrt(cam.zoom);
+        const sp = 26 * dt * speed / Math.sqrt(cam.zoom);
         const l = Math.hypot(sx, sy);
         cam.x += ((sx + sy) / l) * sp * 0.707 * 1.0;
         cam.y += ((sy - sx) / l) * sp * 0.707 * 1.0;
@@ -540,9 +545,11 @@
         const after = this.screenToWorld(x, y);
         this.cam.x += before[0] - after[0]; this.cam.y += before[1] - after[1];
       }, { passive: false });
+      on(window, 'mousemove', (e) => { this.edge.x = e.clientX; this.edge.y = e.clientY; this.edge.on = e.buttons === 0; });
+      on(document.documentElement, 'mouseleave', () => { this.edge.on = false; });
       on(window, 'keydown', (e) => this.keyDown(e));
       on(window, 'keyup', (e) => { this.keys.delete(e.key); });
-      on(window, 'blur', () => { this.keys.clear(); this.midDrag = null; this.drag = null; });
+      on(window, 'blur', () => { this.keys.clear(); this.midDrag = null; this.drag = null; this.edge.on = false; });
     }
     unbind() { for (const k of Object.keys(this._h)) { const [t, ev, fn, o] = this._h[k]; t.removeEventListener(ev, fn, o); } this._h = {}; }
 
