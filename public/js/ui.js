@@ -4,6 +4,7 @@
   const GA = globalThis.GA;
   const { DEFS, TYPES, CATS, CAT_LABEL, PLAYER_COLORS } = GA;
   const $ = (id) => document.getElementById(id);
+  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = (n) => Math.floor(n).toLocaleString('en-US');
   const mmss = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
   const NAME_OF = (t) => DEFS[t].name;
@@ -307,7 +308,7 @@
       let tot = 0, mx = 0;
       for (const e of mine) { groups[e.type] = (groups[e.type] || 0) + 1; tot += e.hp; mx += e.mhp; }
       let chips = '';
-      for (const t of Object.keys(groups)) chips += `<div class="chip" title="${DEFS[t].name}"><span class="cnt">${groups[t]}</span><em>${DEFS[t].name}</em></div>`;
+      for (const t of Object.keys(groups)) chips += `<div class="chip" title="${esc(DEFS[t].name)}"><span class="cnt">${groups[t]}</span><em>${esc(DEFS[t].name)}</em></div>`;
       el.innerHTML = `<div class="multi"><div class="chips">${chips}</div><div class="hpbar"><i style="width:${Math.floor((tot / Math.max(1, mx)) * 100)}%"></i></div><div class="acts"></div></div>`;
       const acts = el.querySelector('.acts');
       const add = (label, fn, on) => { const b = document.createElement('button'); b.textContent = label; b.onclick = fn; if (on) b.classList.add('active'); acts.appendChild(b); };
