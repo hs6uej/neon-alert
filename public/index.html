@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEON ALERT</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="langSwitch" translate="no"><button type="button" data-lang="en">EN</button><button type="button" data-lang="th">ไทย</button></div>
+
+<!-- ============ MENUS ============ -->
+<div id="menu" class="screen">
+  <div class="grid-bg"></div>
+
+  <div class="panel" data-screen="auth">
+    <h1 class="logo">NEON<span>ALERT</span></h1>
+    <p class="tag">Build a base. Harvest ore. Dominate the grid.</p>
+    <div class="seg"><button id="tabLogin" class="active" type="button">Sign in</button><button id="tabRegister" type="button">Register</button></div>
+    <form id="authForm" autocomplete="on">
+      <div class="form one">
+        <label>Username <input id="authUser" maxlength="16" autocomplete="username" required></label>
+        <label>Password <input id="authPass" type="password" maxlength="64" autocomplete="current-password" required></label>
+        <label id="authPass2wrap" class="hidden">Confirm password <input id="authPass2" type="password" maxlength="64" autocomplete="new-password"></label>
+      </div>
+      <p id="authErr" class="err"></p>
+      <button id="authSubmit" class="big primary" type="submit" style="width:100%">Sign in</button>
+    </form>
+    <p class="foot" id="authNote">The first account registered on this server becomes the admin.</p>
+  </div>
+
+  <div class="panel hidden" data-screen="main">
+    <h1 class="logo">NEON<span>ALERT</span></h1>
+    <div class="me"><div><small>COMMANDER</small><b id="whoName">-</b><em id="whoRole" class="badge hidden">ADMIN</em></div><div class="mestats"><b id="whoRating">1000</b> <small>RATING</small><br><span id="whoStats"></span></div></div>
+    <div class="btns">
+      <button id="btnMatch" class="big primary">⚔ &nbsp;Find match <small>(ranked)</small></button>
+      <button id="btnSkirmish" class="big">▶ &nbsp;Skirmish vs AI</button>
+      <button id="btnMulti" class="big">🌐 &nbsp;Online lobby &nbsp;<small>(custom rooms)</small></button>
+      <div class="btns row" style="margin-top:0"><button id="btnStats" style="flex:1">📊 Stats</button><button id="btnHow" class="ghost" style="flex:1">How to play</button></div>
+      <a id="btnAdmin" class="btn ghost hidden" href="/admin" target="_blank">⚙ Admin panel</a>
+      <button id="btnLogout" class="ghost">Sign out</button>
+    </div>
+  </div>
+
+  <div class="panel hidden" data-screen="match">
+    <h2>Find a match</h2>
+    <div class="me" style="margin-top:0"><div><small>YOUR RATING</small><b id="mmRating">1000</b></div><div class="mestats" id="mmStats"></div></div>
+    <p class="muted" style="margin-top:14px">Ranked free-for-all for up to 3 players. You are matched with commanders of a similar rating (the search widens the longer you wait). Your placement decides the rating change.</p>
+    <label class="check"><input type="checkbox" id="mmBots" checked> Fill with AI opponents if nobody is found (unranked)</label>
+    <div id="mmIdle" class="btns"><button id="btnMmStart" class="big primary">⚔ &nbsp;Start searching</button></div>
+    <div id="mmSearching" class="searching hidden"><div class="spinner"></div><div class="sinfo"><b id="mmTimer">0:00</b><small id="mmInfo">Searching…</small></div><button id="btnMmCancel" class="ghost">Cancel</button></div>
+    <div id="mmFound" class="found hidden"><h3>MATCH FOUND</h3><div id="mmPlayers"></div><p id="mmCount" class="muted"></p></div>
+    <p id="mmErr" class="err"></p>
+    <div class="btns row"><button class="ghost" data-back>← Back</button></div>
+  </div>
+
+  <div class="panel wide hidden" data-screen="stats">
+    <h2>Stats</h2>
+    <div id="statTiles" class="tiles"></div>
+    <div class="seg"><button type="button" data-st="recent" class="active">Recent matches</button><button type="button" data-st="board">Leaderboard</button><button type="button" data-st="logins">Sign-in history</button></div>
+    <div id="statBody" class="statbody"></div>
+    <div class="btns row"><button class="ghost" data-back>← Back</button></div>
+  </div>
+
+  <div class="panel mid hidden" data-screen="skirmish">
+    <h2>Skirmish</h2>
+    <div class="form">
+      <label>Opponents
+        <select id="skOpp"><option value="1">1 AI</option><option value="2" selected>2 AI</option></select>
+      </label>
+      <label>AI 1 difficulty
+        <select id="skD1"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>
+      </label>
+      <label id="skD2wrap">AI 2 difficulty
+        <select id="skD2"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>
+      </label>
+      <label id="skTeamWrap">Teams
+        <select id="skTeams">
+          <option value="ffa">Free for all</option>
+          <option value="ally">You + AI 1 vs AI 2</option>
+          <option value="duo">You vs AI 1 + AI 2 (allied)</option>
+        </select>
+      </label>
+      <label>Starting credits
+        <select id="skCredits"></select>
+      </label>
+      <label>Game speed
+        <select id="skSpeed"><option value="1">Normal</option><option value="1.5">Fast</option><option value="2">Very fast</option></select>
+      </label>
+      <label class="span2">Your colour <div id="skColors" class="swatches"></div></label>
+      <label class="span2">Map <div id="skMaps" class="maps"></div></label>
+    </div>
+    <div class="btns row">
+      <button class="ghost" data-back>← Back</button>
+      <button id="btnSkStart" class="big primary">Start game</button>
+    </div>
+  </div>
+
+  <div class="panel wide hidden" data-screen="lobby">
+    <div class="lobbyhead">
+      <div><h2>Online lobby</h2><p class="muted"><span id="onlineCount">0</span> commander(s) online</p></div>
+      <div class="joinrow"><input id="joinCode" maxlength="4" placeholder="CODE" autocomplete="off"><button id="btnJoin">Join</button><button id="btnCreate" class="primary">＋ Create room</button></div>
+    </div>
+    <div id="roomList" class="roomlist"></div>
+    <p id="multiErr" class="err"></p>
+    <div class="lobbychat"><div id="lobbyLog"></div><input id="lobbyInput" maxlength="160" placeholder="Chat with everyone in the lobby…" autocomplete="off"></div>
+    <div class="btns row"><button class="ghost" data-back>← Back</button></div>
+  </div>
+
+  <div class="panel wide hidden" data-screen="room">
+    <div class="lobbyhead">
+      <div><h2>Room</h2><p class="muted" id="lobbyHint"></p></div>
+      <div class="codebox"><span>ROOM CODE</span><b id="roomCode">----</b><button id="btnCopy" class="ghost small">Copy invite link</button></div>
+    </div>
+    <div class="maplabel">Map</div>
+    <div id="roomMaps" class="maps"></div>
+    <div id="slots"></div>
+    <div class="form inline" id="hostOpts">
+      <label>Empty slots at start
+        <select id="fillLevel"><option value="easy">AI Easy</option><option value="normal" selected>AI Normal</option><option value="hard">AI Hard</option></select>
+      </label>
+      <label>Game speed
+        <select id="lobbySpeed"><option value="1">Normal</option><option value="1.5">Fast</option><option value="2">Very fast</option></select>
+      </label>
+    </div>
+    <div id="lanInfo" class="lan"></div>
+    <div class="lobbychat"><div id="roomLog"></div><input id="roomInput" maxlength="140" placeholder="Chat…" autocomplete="off"></div>
+    <div class="btns row">
+      <button id="btnLeave" class="ghost">← Leave room</button>
+      <button id="btnStart" class="big primary">Start game</button>
+    </div>
+    <p id="lobbyErr" class="err"></p>
+  </div>
+
+  <div class="panel wide hidden" data-screen="help">
+    <h2>How to play</h2>
+    <div class="help">
+      <div><h3>Economy</h3><p data-i18n-html="help_economy">Build a <b>Fusion Reactor</b> first (power), then an <b>Ore Processor</b> — it comes with a free <b>Nano Harvester</b> that mines the green crystals. Low power slows production and shuts down towers and the radar.</p></div>
+      <div><h3>Base &amp; army</h3><p data-i18n-html="help_base">Click a structure in the sidebar, wait for <b>READY</b>, then click it again and place it next to your base. Barracks train infantry, the Assembly Forge builds vehicles &amp; drones. The <b>Sensor Array</b> gives you the minimap and advanced units, the <b>Quantum Lab</b> unlocks elite tech and the <b>Orbital Uplink</b> superweapon.</p></div>
+      <div><h3>Controls</h3><p data-i18n-html="help_controls"><b>LMB</b> select / drag-box · <b>RMB</b> move / attack / mine · <b>A</b> attack-move · <b>S</b> stop · <b>D</b> deploy MCV · <b>H</b> home · <b>Space</b> last alert · <b>Ctrl+1-9</b> set group, <b>1-9</b> recall · <b>R</b> repair · <b>X</b> sell · <b>Tab</b> next build tab · <b>Enter</b> chat · Arrow keys / screen edge / MMB-drag to scroll, wheel to zoom. <b>Shift-click</b> a card to queue 5.</p></div>
+      <div><h3>Tips</h3><p data-i18n-html="help_tips"><b>Breach Engineers</b> capture enemy buildings. Right-click a Barracks / Forge to set a <b>rally point</b>. Rocket Lancers and Pulse Towers hit air. Rail Strikers wreck armor.</p></div>
+    </div>
+    <div class="btns row"><button class="ghost" data-back>← Back</button></div>
+  </div>
+</div>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hidden">
+  <div id="topbar">
+    <div class="stat cred"><span class="ico">◈</span><b id="creditsVal">0</b></div>
+    <div class="stat pwr"><span class="lbl">POWER</span><div class="pbar"><div id="pwFill"></div></div><span id="pwText">0/0</span></div>
+    <div class="stat" id="clock">00:00</div>
+    <div class="stat" id="mapName"></div>
+    <div id="playerList"></div>
+    <div class="spacer"></div>
+    <button id="btnSound" title="Sound effects &amp; announcer">🔊</button>
+    <button id="btnMusic" title="Music">♪</button>
+    <button id="btnMenu" title="Menu (Esc)">☰</button>
+  </div>
+  <div id="alertBanner"></div>
+  <div id="toasts"></div>
+
+  <div id="sidebar">
+    <div id="radarBox"><canvas id="mini"></canvas><div id="radarOff"><b>RADAR OFFLINE</b><small>Build a Sensor Array<br>(needs power)</small></div></div>
+    <div id="tools"><button id="toolRepair">🔧 Repair <kbd>R</kbd></button><button id="toolSell">$ Sell <kbd>X</kbd></button></div>
+    <div id="swBox" class="sw hidden"></div>
+    <div id="tabs"></div>
+    <div id="buildList"></div>
+  </div>
+
+  <div id="selPanel" class="hidden"></div>
+  <div id="chatBox"><div id="chatLog"></div><input id="chatInput" maxlength="140" placeholder="Say something… (Enter)" autocomplete="off"></div>
+</div>
+
+<div id="pauseMenu" class="screen hidden">
+  <div class="panel">
+    <h2>Menu</h2><p class="muted" id="pauseNote"></p>
+    <div class="btns">
+      <button id="btnResume" class="big primary">Resume</button>
+      <button id="btnQuit" class="big">Leave game</button>
+    </div>
+  </div>
+</div>
+
+<div id="endScreen" class="screen hidden">
+  <div class="panel">
+    <h1 id="endTitle">VICTORY</h1><p id="endSub" class="muted"></p>
+    <div id="endStats"></div>
+    <div id="endRating" class="hidden"></div>
+    <div class="btns row"><button id="btnWatch" class="ghost">Keep watching</button><button id="btnEndMenu" class="big primary">Leave</button></div>
+  </div>
+</div>
+
+<div id="loading" class="screen hidden"><div class="panel"><h2>Connecting…</h2></div></div>
+
+<script src="js/data.js"></script>
+<script src="js/config.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/render.js"></script>
+<script src="js/net.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

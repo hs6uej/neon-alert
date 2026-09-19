@@ -1,0 +1,13 @@
+{
+  "name": "neon-alert",
+  "version": "1.0.0",
+  "description": "Neon Alert - a web RTS inspired by Red Alert 2",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/headless.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

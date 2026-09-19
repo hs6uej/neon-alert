@@ -1,0 +1,17 @@
+services:
+  neon-alert:
+    build: .
+    image: neon-alert:latest
+    container_name: neon-alert
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "${PORT:-3000}"
+      DATA_DIR: /app/data
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    volumes:
+      - neon-alert-data:/app/data
+
+volumes:
+  neon-alert-data:

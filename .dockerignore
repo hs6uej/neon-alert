@@ -1,0 +1,11 @@
+node_modules
+data
+test
+.claude
+.git
+.env
+.env.example
+*.md
+start.bat
+docker-compose.yaml
+Dockerfile
