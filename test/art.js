@@ -137,8 +137,8 @@ function request(port, method, url, body, token) {
   await new Promise((r) => fake.listen(0, '127.0.0.1', r));
   const fakePort = fake.address().port;
 
-  const start = async (env, prep) => {
-    const port = 3700 + Math.floor(Math.random() * 300), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ga-art-'));
+  const start = async (env, prep, existingDir) => {
+    const port = 3700 + Math.floor(Math.random() * 300), dir = existingDir || fs.mkdtempSync(path.join(os.tmpdir(), 'ga-art-'));
     if (prep) prep(dir);
     const srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env: { ...process.env, PORT: port, DATA_DIR: dir, ADMIN_USER: '', ADMIN_PASS: '', GEMINI_API_KEY: '', GEMINI_IMAGE_MODEL: '', ...env }, stdio: ['ignore', 'pipe', 'inherit'] });
     for (let i = 0; i < 60; i++) { try { await request(port, 'GET', '/api/info'); break; } catch { await sleep(100); } }
@@ -225,10 +225,14 @@ function request(port, method, url, body, token) {
     const oldFile = path.join(A.dir, 'art', `trooper-${v1}.png`), spare = path.join(A.dir, 'art', `trooper-${v1 + 1}.png`);
     await api('PUT', '/api/admin/config', cfgWith({ x_tank: { v: vc } }), admin);
     assert(fs.existsSync(oldFile) && fs.existsSync(spare), 'fresh unused files are kept for a while (an admin may still be editing)');
-    const old = new Date(Date.now() - 2 * 3600 * 1000);
+    const old = new Date(Date.now() - 25 * 3600 * 1000);
     fs.utimesSync(oldFile, old, old);
     await api('PUT', '/api/admin/config', cfgWith({ x_tank: { v: vc } }), admin);
     assert(!fs.existsSync(oldFile), 'old unused pictures are deleted'); assert(fs.existsSync(spare), '... recent ones are not'); assert(fs.existsSync(path.join(A.dir, 'art', `x_tank-${vc}.png`)), 'used pictures are never deleted');
+    // 23 hours old and unused: still kept
+    fs.utimesSync(spare, new Date(Date.now() - 23 * 3600 * 1000), new Date(Date.now() - 23 * 3600 * 1000));
+    await api('PUT', '/api/admin/config', cfgWith({ x_tank: { v: vc } }), admin);
+    assert(fs.existsSync(spare), 'unused pictures are kept for a full day');
     // a picture used by a second set is not deleted either
     fs.utimesSync(path.join(A.dir, 'art', `x_tank-${vc}.png`), old, old);
     await api('PUT', '/api/admin/config', cfgWith({}, { sets: { c_mine: { name: 'Mine', art: {} }, c_other: { name: 'Other', art: { x_tank: { v: vc } } } } }), admin);
@@ -253,6 +257,14 @@ function request(port, method, url, body, token) {
     assert.deepStrictEqual(Object.keys(r.body.config.sets.c_mypics.art), ['trooper'], 'the missing file is dropped, the existing one kept');
     assert.strictEqual(r.body.config.artSet, 'c_mypics'); assert.strictEqual(r.body.config.sets.c_mypics.art.trooper.s, 1.1);
     console.log('ok art config migration');
+
+    // a restart (deploy) never deletes pictures, however old and unused they are
+    const stale = path.join(C.dir, 'art', 'arc-1700000005.png');
+    fs.writeFileSync(stale, good); const ancient = new Date(Date.now() - 10 * 24 * 3600 * 1000); fs.utimesSync(stale, ancient, ancient);
+    C.srv.kill(); await sleep(300);
+    const C2 = await start({}, null, C.dir);
+    assert(fs.existsSync(stale), 'nothing is deleted at start-up'); C.srv = C2.srv;
+    console.log('ok art restart keeps files');
 
     // no key configured
     B = await start({});

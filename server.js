@@ -64,7 +64,9 @@ function pngSize(buf) {
   if (buf.length < 33 || buf.readUInt32BE(0) !== 0x89504e47 || buf.readUInt32BE(4) !== 0x0d0a1a0a || buf.toString('latin1', 12, 16) !== 'IHDR') return null;
   return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
 }
-// Files that no saved config points to are removed after an hour (an upload waits for the admin to press Save).
+// Files that no saved config points to are removed once they are a day old - an upload waits for the admin to press Save,
+// and a "Reset" must not destroy pictures at once. Only ever run when the config is saved, never at start-up (a deploy must not delete anything).
+const ART_KEEP_MS = 24 * 3600 * 1000;
 function gcArt(keep) {
   const used = new Set();
   for (const st of Object.values(keep.sets || {})) for (const [id, a] of Object.entries(st.art)) if (!a.ref) used.add(id + '-' + a.v + '.png');
@@ -72,7 +74,7 @@ function gcArt(keep) {
   try { names = fs.readdirSync(ART_DIR); } catch { return; }
   for (const n of names) {
     if (used.has(n)) continue;
-    try { const f = path.join(ART_DIR, n); if (Date.now() - fs.statSync(f).mtimeMs > 3600 * 1000) fs.unlinkSync(f); } catch { /* ignore */ }
+    try { const f = path.join(ART_DIR, n); if (Date.now() - fs.statSync(f).mtimeMs > ART_KEEP_MS) fs.unlinkSync(f); } catch { /* ignore */ }
   }
 }
 // Drops picture references whose file is missing (e.g. after restoring an old data folder).
@@ -273,7 +275,6 @@ const saveMaps = () => { GA.setCustomMaps(savedMaps); writeJson('maps.json', { m
 
 let savedConfig = withExistingArt(GA.cleanConfig(readJson('config.json', {})));
 GA.applyConfig(savedConfig);
-gcArt(savedConfig);
 const rooms = new Map();
 const anyPlaying = () => [...rooms.values()].some((r) => r.state === 'playing' && r.sim && !r.sim.over);
 function applyConfigIfIdle() {
@@ -545,7 +546,7 @@ async function handleApi(req, res, url) {
         if (!size) return json(res, 400, { error: 'The picture must be a PNG.' });
         if (buf.length > ART_MAX_BYTES) return json(res, 413, { error: 'The picture is too big (max ' + ART_MAX_BYTES / 1024 + ' KB) - use a smaller size.' });
         if (size.w < 8 || size.h < 8 || size.w > ART_MAX_SIDE || size.h > ART_MAX_SIDE) return json(res, 400, { error: `The picture must be between 8 and ${ART_MAX_SIDE} pixels on each side.` });
-        if (fs.readdirSync(ART_DIR).length >= ART_MAX_FILES) return json(res, 507, { error: 'Too many stored pictures - save your config (unused ones are cleaned up after an hour) and try again.' });
+        if (fs.readdirSync(ART_DIR).length >= ART_MAX_FILES) return json(res, 507, { error: 'Too many stored pictures - save your config (unused ones are cleaned up after a day) and try again.' });
         let v = Math.floor(Date.now() / 1000);
         while (fs.existsSync(artPath(b.type, v))) v++;
         const tmp = artPath(b.type, v) + '.tmp';
