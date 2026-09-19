@@ -10,6 +10,7 @@ const { WebSocketServer } = require('ws');
 
 require('./public/js/data.js');
 require('./public/js/mapdata.js');
+require('./public/js/artsets.js');
 require('./public/js/config.js');
 require('./public/js/sim.js');
 require('./public/js/ai.js');
@@ -65,7 +66,8 @@ function pngSize(buf) {
 }
 // Files that no saved config points to are removed after an hour (an upload waits for the admin to press Save).
 function gcArt(keep) {
-  const used = new Set(Object.entries(keep.art || {}).map(([id, a]) => id + '-' + a.v + '.png'));
+  const used = new Set();
+  for (const st of Object.values(keep.sets || {})) for (const [id, a] of Object.entries(st.art)) if (!a.ref) used.add(id + '-' + a.v + '.png');
   let names = [];
   try { names = fs.readdirSync(ART_DIR); } catch { return; }
   for (const n of names) {
@@ -75,7 +77,7 @@ function gcArt(keep) {
 }
 // Drops picture references whose file is missing (e.g. after restoring an old data folder).
 function withExistingArt(cfg) {
-  for (const [id, a] of Object.entries(cfg.art || {})) if (!fs.existsSync(artPath(id, a.v))) delete cfg.art[id];
+  for (const st of Object.values(cfg.sets || {})) for (const [id, a] of Object.entries(st.art)) if (!a.ref && !fs.existsSync(artPath(id, a.v))) delete st.art[id];
   return cfg;
 }
 
@@ -579,6 +581,15 @@ async function handleApi(req, res, url) {
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent((req.url || '/').split('?')[0]);
   if (url.startsWith('/api/')) { handleApi(req, res, url); return; }
+  if (url.startsWith('/sets/')) { // pictures of the built-in sets (files in public/sets/<set>/<type>.png; the ?v= in the link changes when one is replaced)
+    const m = /^\/sets\/(v\d{1,2})\/([a-z0-9_]{2,16})\.png$/.exec(url);
+    fs.readFile(m ? path.join(PUBLIC, 'sets', m[1], m[2] + '.png') : '', (err, data) => {
+      if (!m || err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
+      res.end(data);
+    });
+    return;
+  }
   if (url.startsWith('/art/')) {
     const m = ART_FILE_RE.exec(url.slice(5));
     if (!m) { res.writeHead(404); res.end('Not found'); return; }

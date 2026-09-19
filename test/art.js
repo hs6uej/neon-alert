@@ -1,6 +1,7 @@
 // Pictures for buildings / units: config validation, background removal, and the server side
 // (storage, permissions, the AI call against a fake Gemini server).
 require('../public/js/data.js');
+require('../public/js/artsets.js');
 require('../public/js/config.js');
 require('../public/js/artstudio.js');
 const { spawn } = require('child_process');
@@ -12,30 +13,58 @@ const zlib = require('zlib');
 const assert = require('assert');
 const GA = globalThis.GA;
 
-// ---- config: cleaning and applying pictures
+// ---- config: picture sets
 {
   const raw = {
     custom: { types: { x_aa: { base: 'arc', name: 'A' }, x_bb: { base: 'arc', name: 'B' }, x_cc: { base: 'barracks', name: 'C' } } },
-    art: {
-      trooper: { v: 5, s: 1.2, y: 0.1, f: 1 }, arc: { v: 7 }, x_aa: { v: 9, s: 99, y: -9 }, x_cc: { v: 3.5 },
-      nosuch: { v: 1 }, x_zzz: { v: 1 }, power: { v: 0 }, radar: 'x', refinery: { v: -4 }, factory: { v: 'abc' },
+    artSet: 'c_mine',
+    sets: {
+      c_mine: {
+        name: 'Mine', tint: true,
+        art: {
+          trooper: { v: 5, s: 1.2, y: 0.1 }, arc: { v: 7 }, x_aa: { v: 9, s: 99, y: -9 }, x_cc: { v: 3.5 },
+          nosuch: { v: 1 }, x_zzz: { v: 1 }, power: { v: 0 }, radar: 'x', refinery: { v: -4 }, factory: { v: 'abc' },
+          conyard: { ref: 'v2' }, derrick: { ref: 'nope' }, barracks: { ref: 'v2', s: 1.5, v: 99 },
+        },
+      },
+      c_x: { name: 'too short an id' }, bad: { name: 'bad id' },
     },
   };
   const c = GA.cleanConfig(raw);
-  assert.deepStrictEqual(Object.keys(c.art).sort(), ['arc', 'trooper', 'x_aa'], 'unknown ids and bad versions are dropped');
-  assert.deepStrictEqual(c.art.arc, { v: 7, s: 1, y: 0, f: 1 }, 'defaults for size / height / frames');
-  assert.deepStrictEqual(c.art.x_aa, { v: 9, s: 3, y: -0.6, f: 1 }, 'size and height are clamped');
-  assert.deepStrictEqual(GA.cleanConfig({}).art, {}, 'empty config has an art map');
+  assert.deepStrictEqual(Object.keys(c.sets), ['c_mine'], 'sets with invalid ids are dropped');
+  assert.deepStrictEqual(Object.keys(c.sets.c_mine.art).sort(), ['arc', 'barracks', 'conyard', 'trooper', 'x_aa'], 'unknown ids, bad versions and unknown refs are dropped');
+  assert.deepStrictEqual(c.sets.c_mine.art.arc, { v: 7, s: 1, y: 0, f: 1 }, 'defaults for size / height / frames');
+  assert.deepStrictEqual(c.sets.c_mine.art.x_aa, { v: 9, s: 3, y: -0.6, f: 1 }, 'size and height are clamped');
+  assert.deepStrictEqual(c.sets.c_mine.art.barracks, { ref: 'v2', v: 1, s: 1.5, y: 0, f: 1 }, 'a reference takes its version from the built-in set');
+  assert.strictEqual(c.artSet, 'c_mine'); assert.strictEqual(GA.cleanConfig({}).artSet, 'v1'); assert.deepStrictEqual(GA.cleanConfig({}).sets, {});
+  assert.strictEqual(GA.cleanConfig({ artSet: 'c_gone' }).artSet, 'v1', 'an unknown set falls back to V1');
+  assert.strictEqual(GA.cleanConfig({ artSet: 'v2' }).artSet, 'v2');
+  const many = {}; for (let i = 0; i < 12; i++) many['c_set' + String(i).padStart(2, '0')] = { name: 'S' + i };
+  assert.strictEqual(Object.keys(GA.cleanConfig({ sets: many }).sets).length, GA.CUSTOM_LIMITS.sets, 'at most 8 sets');
   GA.applyConfig(raw);
-  assert.deepStrictEqual(GA.DEFS.trooper.art, { id: 'trooper', v: 5, s: 1.2, y: 0.1, f: 1 });
-  assert.deepStrictEqual(GA.DEFS.x_aa.art, { id: 'x_aa', v: 9, s: 3, y: -0.6, f: 1 }, 'a custom type can have its own picture');
-  assert.deepStrictEqual(GA.DEFS.x_bb.art, { id: 'arc', v: 7, s: 1, y: 0, f: 1 }, 'a copy uses the picture of the type it was made from');
-  assert(!GA.DEFS.x_cc.art && !GA.DEFS.power.art, 'no picture where none is set');
+  assert.deepStrictEqual(GA.DEFS.trooper.art, { id: 'trooper', v: 5, s: 1.2, y: 0.1, f: 1, tint: true, url: '/art/trooper-5.png' });
+  assert.strictEqual(GA.DEFS.barracks.art.url, '/sets/v2/barracks.png?v=1', 'a reference uses the file of the built-in set');
+  assert.strictEqual(GA.DEFS.x_aa.art.url, '/art/x_aa-9.png', 'a custom type can have its own picture');
+  assert.strictEqual(GA.DEFS.x_bb.art.url, '/art/arc-7.png', 'a copy uses the picture of the type it was made from');
+  assert.strictEqual(GA.DEFS.x_cc.art.url, '/sets/v2/barracks.png?v=1', 'a copy of the barracks uses the barracks picture (its own entry was invalid)');
+  assert(!GA.DEFS.power.art, 'no picture where the set has none');
   GA.DEFS.x_bb.art.s = 2; GA.applyConfig(raw);
   assert.strictEqual(GA.DEFS.x_bb.art.s, 1, 'applying again rebuilds pictures from the config');
+  // built-in sets
+  GA.applyConfig({ artSet: 'v2' });
+  for (const t of GA.BUILTIN_TYPES) assert(GA.DEFS[t].art && GA.DEFS[t].art.tint && GA.DEFS[t].art.url === `/sets/v2/${t}.png?v=1`, 'V2 has a picture for ' + t);
+  GA.applyConfig({ artSet: 'v2', custom: { types: { x_aa: { base: 'arc', name: 'A' } } } });
+  assert.strictEqual(GA.DEFS.x_aa.art.url, '/sets/v2/arc.png?v=1', 'a custom copy inherits the picture from V2');
+  GA.applyConfig({ artSet: 'v1' });
+  assert(GA.BUILTIN_TYPES.every((t) => !GA.DEFS[t].art), 'V1 = the drawings made by the game code');
+  // configs saved before sets existed keep their pictures
+  const old = GA.cleanConfig({ art: { arc: { v: 5 }, nosuch: { v: 1 } } });
+  assert.deepStrictEqual(Object.keys(old.sets), ['c_mypics']); assert.strictEqual(old.artSet, 'c_mypics'); assert.deepStrictEqual(Object.keys(old.sets.c_mypics.art), ['arc']);
+  assert.strictEqual(GA.cleanConfig({ art: { arc: { v: 5 } }, artSet: 'v2' }).artSet, 'v2', 'an explicit choice wins over the migration');
+  assert.deepStrictEqual(GA.cleanConfig(GA.cleanConfig({ art: { arc: { v: 5 } } })), old, 'cleaning is stable');
   GA.applyConfig({});
   assert(!GA.DEFS.trooper.art && !GA.DEFS.arc.art && !GA.DEFS.x_aa, 'resetting removes every picture');
-  console.log('ok config pictures');
+  console.log('ok config picture sets');
 }
 
 // ---- background removal
@@ -74,6 +103,7 @@ function makePng(w, h) {
   const raw = Buffer.alloc((w * 4 + 1) * h);
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
+const pngSizeOk = (b) => b.length > 33 && b.readUInt32BE(0) === 0x89504e47 && b.readUInt32BE(16) > 8 && b.readUInt32BE(20) > 8;
 const png = (buf) => 'data:image/png;base64,' + buf.toString('base64');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function request(port, method, url, body, token) {
@@ -107,14 +137,15 @@ function request(port, method, url, body, token) {
   await new Promise((r) => fake.listen(0, '127.0.0.1', r));
   const fakePort = fake.address().port;
 
-  const start = async (env) => {
+  const start = async (env, prep) => {
     const port = 3700 + Math.floor(Math.random() * 300), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ga-art-'));
+    if (prep) prep(dir);
     const srv = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env: { ...process.env, PORT: port, DATA_DIR: dir, ADMIN_USER: '', ADMIN_PASS: '', GEMINI_API_KEY: '', GEMINI_IMAGE_MODEL: '', ...env }, stdio: ['ignore', 'pipe', 'inherit'] });
     for (let i = 0; i < 60; i++) { try { await request(port, 'GET', '/api/info'); break; } catch { await sleep(100); } }
     return { srv, port, dir };
   };
   const A = await start({ GEMINI_API_KEY: KEY, GEMINI_API_BASE: `http://127.0.0.1:${fakePort}`, GEMINI_IMAGE_MODEL: 'test-image-model' });
-  let B;
+  let B, C;
   try {
     const api = (m, u, b, t) => request(A.port, m, u, b, t);
     let r = await api('POST', '/api/register', { username: 'Alice', password: 'secret1' });
@@ -178,27 +209,50 @@ function request(port, method, url, body, token) {
     for (const u of ['/art/..%2Fusers.json', '/art/trooper-1.png/../../users.json', '/art/TROOPER-1.png', '/art/users.json']) assert.strictEqual((await api('GET', u)).status, 404, u + ' is not a picture');
     console.log('ok art storage');
 
-    // config: pictures are part of it
+    // config: picture sets are part of it
     await api('PUT', '/api/admin/art', { type: 'x_tank', png: png(good) }, admin); // custom type not saved yet
     r = await api('PUT', '/api/admin/art', { type: 'x_tank', png: png(good) }, admin);
     const vc = r.body.v;
-    r = await api('PUT', '/api/admin/config', { config: { custom: { types: { x_tank: { base: 'arc', name: 'Zap' } } }, art: { trooper: { v: v1, s: 1.5, y: 0.1 }, x_tank: { v: vc }, arc: { v: 424242 } } } }, admin);
+    const cfgWith = (art, extra) => ({ config: { custom: { types: { x_tank: { base: 'arc', name: 'Zap' } } }, artSet: 'c_mine', sets: { c_mine: { name: 'Mine', tint: true, art } }, ...extra } });
+    r = await api('PUT', '/api/admin/config', cfgWith({ trooper: { v: v1, s: 1.5, y: 0.1 }, x_tank: { v: vc }, arc: { v: 424242 }, conyard: { ref: 'v2' } }), admin);
     assert.strictEqual(r.status, 200);
-    assert.deepStrictEqual(Object.keys(r.body.config.art).sort(), ['trooper', 'x_tank'], 'a reference to a missing file is dropped');
-    assert.deepStrictEqual(r.body.config.art.trooper, { v: v1, s: 1.5, y: 0.1, f: 1 });
+    assert.deepStrictEqual(Object.keys(r.body.config.sets.c_mine.art).sort(), ['conyard', 'trooper', 'x_tank'], 'a reference to a missing file is dropped');
+    assert.deepStrictEqual(r.body.config.sets.c_mine.art.trooper, { v: v1, s: 1.5, y: 0.1, f: 1 });
+    assert.strictEqual(r.body.config.artSet, 'c_mine');
     r = await api('GET', '/api/config');
-    assert.strictEqual(r.body.config.art.x_tank.v, vc, 'players get the picture list with the config');
+    assert.strictEqual(r.body.config.sets.c_mine.art.x_tank.v, vc, 'players get the picture sets with the config'); assert.strictEqual(r.body.config.artSet, 'c_mine');
     // dropping a picture: the file survives the grace period, then it is cleaned up on the next save
     const oldFile = path.join(A.dir, 'art', `trooper-${v1}.png`), spare = path.join(A.dir, 'art', `trooper-${v1 + 1}.png`);
-    await api('PUT', '/api/admin/config', { config: { custom: { types: { x_tank: { base: 'arc', name: 'Zap' } } }, art: { x_tank: { v: vc } } } }, admin);
+    await api('PUT', '/api/admin/config', cfgWith({ x_tank: { v: vc } }), admin);
     assert(fs.existsSync(oldFile) && fs.existsSync(spare), 'fresh unused files are kept for a while (an admin may still be editing)');
     const old = new Date(Date.now() - 2 * 3600 * 1000);
     fs.utimesSync(oldFile, old, old);
-    await api('PUT', '/api/admin/config', { config: { custom: { types: { x_tank: { base: 'arc', name: 'Zap' } } }, art: { x_tank: { v: vc } } } }, admin);
+    await api('PUT', '/api/admin/config', cfgWith({ x_tank: { v: vc } }), admin);
     assert(!fs.existsSync(oldFile), 'old unused pictures are deleted'); assert(fs.existsSync(spare), '... recent ones are not'); assert(fs.existsSync(path.join(A.dir, 'art', `x_tank-${vc}.png`)), 'used pictures are never deleted');
+    // a picture used by a second set is not deleted either
+    fs.utimesSync(path.join(A.dir, 'art', `x_tank-${vc}.png`), old, old);
+    await api('PUT', '/api/admin/config', cfgWith({}, { sets: { c_mine: { name: 'Mine', art: {} }, c_other: { name: 'Other', art: { x_tank: { v: vc } } } } }), admin);
+    assert(fs.existsSync(path.join(A.dir, 'art', `x_tank-${vc}.png`)), 'files used by any set are kept');
+    // built-in set pictures
+    r = await api('GET', '/sets/v2/arc.png?v=1');
+    assert.strictEqual(r.status, 200); assert.strictEqual(r.headers['content-type'], 'image/png'); assert(/immutable/.test(r.headers['cache-control']));
+    assert(r.buf.equals(fs.readFileSync(path.join(__dirname, '..', 'public', 'sets', 'v2', 'arc.png'))), 'served bytes are the file of the set');
+    assert(pngSizeOk(r.buf), 'V2 pictures are PNGs');
+    for (const u of ['/sets/v2/nosuch.png', '/sets/v3/arc.png', '/sets/v2/../../server.js', '/sets/v2/arc.png/../../../server.js', '/sets/v2/ARC.png', '/sets/../server.js']) assert.strictEqual((await api('GET', u)).status, 404, u + ' is not a picture');
     r = await api('POST', '/api/admin/config/reset', null, admin);
-    assert.deepStrictEqual(r.body.config.art, {});
-    console.log('ok art config + cleanup');
+    assert.deepStrictEqual(r.body.config.sets, {}); assert.strictEqual(r.body.config.artSet, 'v1');
+    console.log('ok art sets + cleanup');
+
+    // a config saved before picture sets existed keeps its pictures (in a set called "My pictures")
+    C = await start({}, (dir) => {
+      fs.mkdirSync(path.join(dir, 'art'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'art', 'trooper-1700000000.png'), good);
+      fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ art: { trooper: { v: 1700000000, s: 1.1 }, arc: { v: 1700000001 } } }));
+    });
+    r = await request(C.port, 'GET', '/api/config');
+    assert.deepStrictEqual(Object.keys(r.body.config.sets.c_mypics.art), ['trooper'], 'the missing file is dropped, the existing one kept');
+    assert.strictEqual(r.body.config.artSet, 'c_mypics'); assert.strictEqual(r.body.config.sets.c_mypics.art.trooper.s, 1.1);
+    console.log('ok art config migration');
 
     // no key configured
     B = await start({});
@@ -211,7 +265,7 @@ function request(port, method, url, body, token) {
     console.log('ok art without an AI key');
     console.log('ALL OK');
   } finally {
-    A.srv.kill(); if (B) B.srv.kill(); fake.close();
-    for (const x of [A, B]) if (x) try { fs.rmSync(x.dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    A.srv.kill(); if (B) B.srv.kill(); if (C) C.srv.kill(); fake.close();
+    for (const x of [A, B, C]) if (x) try { fs.rmSync(x.dir, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 })().catch((e) => { console.error(e); process.exit(1); });

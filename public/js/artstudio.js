@@ -81,7 +81,7 @@
     return out;
   };
 
-  // opt: { type, name, desc, kind: 'b'|'u', art: {v,s,y,f}|undefined (own picture), inherited: bool, api, onDone(result) }
+  // opt: { type, name, desc, kind: 'b'|'u', art: {v,s,y,f}|undefined (own picture), artUrl, tint, inherited: bool, api, onDone(result) }
   // onDone gets { v, s, y, f } for a new picture, or null when the picture was removed.
   GA.openArtStudio = function (opt) {
     const st = { work: newCanvas(SIZE, SIZE), raw: null, rawFrames: null, frames: null, edited: false, undo: [], tool: 'pen', drawing: false, ai: false, busy: false, strip: null, alive: true, s: opt.art ? opt.art.s : 1, y: opt.art ? opt.art.y : 0 };
@@ -138,7 +138,7 @@
     for (const c of [sSize, sY]) c.oninput = () => { st.s = +sSize.value; st.y = +sY.value; };
 
     const useBtn = el('button', { class: 'primary', onclick: () => save() }, '✔ Use this picture');
-    const removeBtn = opt.art ? el('button', { class: 'danger', onclick: () => { close(); opt.onDone(null); } }, opt.inherited ? 'Remove my picture' : 'Back to the built-in drawing') : null;
+    const removeBtn = opt.art ? el('button', { class: 'danger', onclick: () => { close(); opt.onDone(null); } }, opt.inherited ? 'Remove my picture' : 'Remove this picture') : null;
     const closeBtn = el('button', { class: 'ghost', onclick: () => close() }, 'Cancel');
 
     const dlg = el('div', { class: 'as-dlg', role: 'dialog' },
@@ -210,7 +210,7 @@
     function tick() {
       if (!st.alive) return;
       const sp = strip();
-      GA.renderPreview(prev, opt.type, sp ? { img: sp.canvas, s: st.s, y: st.y, f: sp.f } : null, 0, foot.checked, performance.now() / 1000, moving.checked);
+      GA.renderPreview(prev, opt.type, sp ? { img: sp.canvas, s: st.s, y: st.y, f: sp.f, tint: !!opt.tint } : null, 0, foot.checked, performance.now() / 1000, moving.checked);
       if (!sp) { const c = prev.getContext('2d'); c.fillStyle = 'rgba(255,255,255,.6)'; c.font = '13px sans-serif'; c.textAlign = 'center'; c.fillText('Empty canvas - showing the built-in drawing', prev.width / 2, 22); }
       requestAnimationFrame(tick);
     }
@@ -319,7 +319,7 @@
     }).catch(() => { aiNote.textContent = 'Could not check the AI settings.'; });
     if (opt.art && opt.art.v) {
       const a = opt.art, n = a.f || 1;
-      loadImage(`/art/${opt.type}-${a.v}.png`).then((img) => {
+      loadImage(opt.artUrl || `/art/${opt.type}-${a.v}.png`).then((img) => {
         const fw = Math.floor(img.width / n);
         if (n > 1) {
           st.frames = []; for (let i = 0; i < n; i++) st.frames.push(fitInto(img, i * fw, 0, fw, img.height, 2));

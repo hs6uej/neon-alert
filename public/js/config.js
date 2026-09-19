@@ -4,6 +4,7 @@
 (function () {
   'use strict';
   const GA = globalThis.GA;
+  if (!GA.BUILTIN_SETS && typeof require === 'function') require('./artsets.js'); // Node: the built-in picture sets (browsers load artsets.js with a script tag)
   const clone = (o) => JSON.parse(JSON.stringify(o));
 
   // Snapshot of the built-in defaults, taken before any override is applied.
@@ -18,9 +19,10 @@
   GA.BUILTIN_TYPES = GA.TYPES.slice();
   GA.CUSTOM_TYPES = [];
   GA.CUSTOM_WEAPONS = [];
-  GA.CUSTOM_LIMITS = { types: 24, weapons: 12 };
+  GA.CUSTOM_LIMITS = { types: 24, weapons: 12, sets: 8 };
   GA.CUSTOM_TYPE_ID = /^x_[a-z0-9]{2,12}$/;
   GA.CUSTOM_WEAPON_ID = /^w_[a-z0-9]{2,12}$/;
+  GA.CUSTOM_SET_ID = /^c_[a-z0-9]{2,12}$/;
   // types that cannot be switched off (the game cannot run without them)
   GA.PROTECTED_TYPES = ['conyard', 'power', 'refinery', 'harvester'];
   const ARMORS = ['inf', 'light', 'heavy', 'bld', 'air'];
@@ -91,9 +93,20 @@
   };
   const isBuilding = (t) => GA.DEFS[t] && GA.DEFS[t].kind === 'b';
 
+  // The picture of building / unit `id` in picture set `setId` of the (cleaned) config, or null.
+  // { id, v, s, y, f, tint, url }: url is where the file is; f frames sit side by side in the file.
+  GA.artFor = function (cfg, setId, id) {
+    const bs = GA.BUILTIN_SETS[setId], cs = cfg.sets && cfg.sets[setId];
+    let e = bs ? bs.art[id] : cs ? cs.art[id] : null, from = bs ? setId : null;
+    if (!e) return null;
+    if (!bs && e.ref) from = e.ref;
+    const tint = bs ? !!bs.tint : !!cs.tint;
+    return { id, v: e.v, s: e.s === undefined ? 1 : e.s, y: e.y || 0, f: e.f || 1, tint, url: from ? `/sets/${from}/${id}.png?v=${e.v}` : `/art/${id}-${e.v}.png` };
+  };
+
   // Returns a cleaned copy of `raw` containing only known, in-range values that differ from the defaults.
   GA.cleanConfig = function (raw) {
-    const out = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [], art: {} };
+    const out = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [], sets: {}, artSet: GA.DEFAULT_ART_SET };
     if (!raw || typeof raw !== 'object') return out;
     const diff = (a, b) => JSON.stringify(a) !== JSON.stringify(b);
     const rawCustom = raw.custom && typeof raw.custom === 'object' ? raw.custom : {};
@@ -144,13 +157,33 @@
     }
     const allIds = GA.BUILTIN_TYPES.concat(Object.keys(out.custom.types));
     out.disabled = Array.from(new Set(Array.isArray(raw.disabled) ? raw.disabled : [])).filter((x) => allIds.includes(x) && !GA.PROTECTED_TYPES.includes(x)).sort();
-    // ---- pictures (files live on the server: /art/<type>-<version>.png). Only the reference and the placement are stored here.
-    for (const [id, a] of Object.entries(raw.art && typeof raw.art === 'object' ? raw.art : {})) {
-      if (!allIds.includes(id) || !a || typeof a !== 'object' || !Number.isSafeInteger(a.v) || a.v < 1 || a.v > 9999999999999) continue;
-      const s = clampNum(a.s === undefined ? 1 : a.s, GA.SCHEMA.art.s), y = clampNum(a.y === undefined ? 0 : a.y, GA.SCHEMA.art.y);
-      const f = clampNum(a.f === undefined ? 1 : a.f, GA.SCHEMA.art.f);
-      out.art[id] = { v: a.v, s: Math.round((s === null ? 1 : s) * 100) / 100, y: Math.round((y === null ? 0 : y) * 100) / 100, f: f === null ? 1 : Math.round(f) };
+    // ---- picture sets. A set maps building / unit ids to pictures (see artsets.js for the built-in ones).
+    // An entry is { v, s, y, f }: file version, size, height, animation frames - the file is /art/<id>-<v>.png -
+    // or { ref: 'v2', s, y } which uses the picture of the same type from a built-in set.
+    const cleanArt = (rawArt) => {
+      const art = {};
+      for (const [id, a] of Object.entries(rawArt && typeof rawArt === 'object' ? rawArt : {})) {
+        if (!allIds.includes(id) || !a || typeof a !== 'object') continue;
+        const s = clampNum(a.s === undefined ? 1 : a.s, GA.SCHEMA.art.s), y = clampNum(a.y === undefined ? 0 : a.y, GA.SCHEMA.art.y);
+        const e = { s: Math.round((s === null ? 1 : s) * 100) / 100, y: Math.round((y === null ? 0 : y) * 100) / 100 };
+        const bs = typeof a.ref === 'string' && GA.BUILTIN_SETS[a.ref];
+        if (bs && bs.art[id]) Object.assign(e, { ref: a.ref, v: bs.art[id].v, f: bs.art[id].f || 1 });
+        else if (Number.isSafeInteger(a.v) && a.v >= 1 && a.v <= 9999999999999) { const f = clampNum(a.f === undefined ? 1 : a.f, GA.SCHEMA.art.f); Object.assign(e, { v: a.v, f: f === null ? 1 : Math.round(f) }); }
+        else continue;
+        art[id] = e;
+      }
+      return art;
+    };
+    let rawSets = raw.sets && typeof raw.sets === 'object' ? raw.sets : null, legacySet = false;
+    if (!rawSets && raw.art && typeof raw.art === 'object' && Object.keys(raw.art).length) { rawSets = { c_mypics: { name: 'My pictures', tint: false, art: raw.art } }; legacySet = true; } // config saved before sets existed
+    for (const id of Object.keys(rawSets || {}).sort().slice(0, GA.CUSTOM_LIMITS.sets)) {
+      const st = rawSets[id];
+      if (!GA.CUSTOM_SET_ID.test(id) || !st || typeof st !== 'object') continue;
+      const name = typeof st.name === 'string' ? st.name.replace(/[<>]/g, '').trim().slice(0, 24) : '';
+      out.sets[id] = { name: name || id, tint: !!st.tint, art: cleanArt(st.art) };
     }
+    const wantSet = raw.artSet !== undefined ? raw.artSet : legacySet ? 'c_mypics' : GA.DEFAULT_ART_SET;
+    out.artSet = GA.BUILTIN_SETS[wantSet] || out.sets[wantSet] ? wantSet : GA.DEFAULT_ART_SET;
     for (const [t, fields] of Object.entries(raw.defs || {})) {
       if (!GA.BASE.defs[t] || !fields || typeof fields !== 'object') continue;
       const base = GA.BASE.defs[t];
@@ -218,14 +251,13 @@
       const d = GA.DEFS[t], b = GA.BASE.defs[t];
       for (const f of DEF_FIELDS) if (b[f] !== undefined) d[f] = clone(b[f]);
       if (b.weapon === undefined) delete d.weapon;
-      delete d.art;
     }
     for (const k of Object.keys(GA.WEAPONS)) for (const f of Object.keys(GA.BASE.weapons[k])) GA.WEAPONS[k][f] = GA.BASE.weapons[k][f];
     for (const w of Object.keys(GA.MULT)) Object.assign(GA.MULT[w], GA.BASE.mult[w]);
     for (const l of Object.keys(GA.BOT_LEVELS)) Object.assign(GA.BOT_LEVELS[l], GA.BASE.bots[l]);
     Object.assign(GA.SETTINGS, GA.BASE.settings);
 
-    for (const [id, a] of Object.entries(cfg.art)) if (GA.DEFS[id] && GA.BASE.defs[id]) GA.DEFS[id].art = { id, v: a.v, s: a.s, y: a.y, f: a.f };
+    for (const t of GA.BUILTIN_TYPES) { const a = GA.artFor(cfg, cfg.artSet, t); if (a) GA.DEFS[t].art = a; else delete GA.DEFS[t].art; }
     for (const [t, f] of Object.entries(cfg.defs)) Object.assign(GA.DEFS[t], f);
     for (const [k, f] of Object.entries(cfg.weapons)) Object.assign(GA.WEAPONS[k], f);
     for (const [w, r] of Object.entries(cfg.mult)) Object.assign(GA.MULT[w], r);
@@ -242,8 +274,8 @@
       delete d.wp; delete d.fly; delete d.neutral; delete d.art;
       Object.assign(d, fields);
       // a copy looks like the type it was made from (including that type's picture) unless it gets a picture of its own
-      const own = cfg.art[id];
-      if (own) d.art = { id, v: own.v, s: own.s, y: own.y, f: own.f }; else if (src.art) d.art = Object.assign({}, src.art);
+      const own = GA.artFor(cfg, cfg.artSet, id);
+      if (own) d.art = own; else if (src.art) d.art = Object.assign({}, src.art);
       d.id = id; d.custom = true; d.base = base; d.role = src.role || base; d.look = src.look || base; d.buildable = true;
       if (!d.weapon) delete d.weapon;
       GA.DEFS[id] = d;
@@ -265,5 +297,5 @@
     GA.CONFIG = cfg;
     return cfg;
   };
-  GA.CONFIG = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [], art: {} };
+  GA.CONFIG = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [], sets: {}, artSet: GA.DEFAULT_ART_SET };
 })();

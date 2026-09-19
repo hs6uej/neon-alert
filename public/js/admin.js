@@ -7,7 +7,7 @@
   let token = null;
   try { token = localStorage.getItem('ga.token'); } catch (e) { /* ignore */ }
   let me = null;
-  let cfg = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [], art: {} }; // working overrides
+  let cfg = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [], sets: {}, artSet: GA.DEFAULT_ART_SET }; // working overrides
   let saved = '';
   let tab = 'structures';
   let roomTimer = null;
@@ -108,12 +108,55 @@
     while (taken(id)) id = prefix + base.slice(0, 9 - String(n).length) + n++;
     return id;
   };
-  function openStudio(t, kind, rerender) {
+  // ---- picture sets: V1 / V2 are built in, the admin can make sets of their own
+  const isBuiltinSet = (id) => !!GA.BUILTIN_SETS[id];
+  const setName = (id) => (GA.BUILTIN_SETS[id] ? GA.BUILTIN_SETS[id].name : cfg.sets[id] ? cfg.sets[id].name : id);
+  // a new custom set; `from` = a set whose pictures it starts with (built-in pictures are shared, custom ones are copied)
+  function createSet(name, from) {
+    if (Object.keys(cfg.sets).length >= GA.CUSTOM_LIMITS.sets) { msg(`At most ${GA.CUSTOM_LIMITS.sets} picture sets of your own.`, 'err'); return null; }
+    const id = slug(name, 'c_', (x) => !!cfg.sets[x] || !!GA.BUILTIN_SETS[x]);
+    const art = {};
+    if (GA.BUILTIN_SETS[from]) for (const [t, e] of Object.entries(GA.BUILTIN_SETS[from].art)) art[t] = { ref: from, s: e.s, y: e.y };
+    else if (cfg.sets[from]) Object.assign(art, JSON.parse(JSON.stringify(cfg.sets[from].art)));
+    cfg.sets[id] = { name, tint: from && GA.BUILTIN_SETS[from] ? GA.BUILTIN_SETS[from].tint : from && cfg.sets[from] ? cfg.sets[from].tint : true, art };
+    cfg.artSet = id;
+    return id;
+  }
+  async function reapply(rerender) { GA.applyConfig(cfg); await GA.preloadArt(); refreshDirty(); rerender(); }
+  function setBar(rerender) {
+    const sel = el('select', { style: 'width:auto;min-width:200px' },
+      Object.keys(GA.BUILTIN_SETS).concat(Object.keys(cfg.sets)).map((id) => el('option', { value: id }, setName(id) + (GA.BUILTIN_SETS[id] ? '  (built in)' : ''))));
+    sel.value = cfg.artSet;
+    sel.onchange = () => { cfg.artSet = sel.value; reapply(rerender); };
+    const custom = !isBuiltinSet(cfg.artSet), cur = cfg.sets[cfg.artSet];
+    const ask = (q, d) => { const n = prompt(GA.tt(q), d || ''); return n && n.trim().length >= 2 ? n.trim().slice(0, 24) : null; };
+    const tint = el('input', { type: 'checkbox' });
+    tint.checked = custom ? cur.tint : GA.BUILTIN_SETS[cfg.artSet].tint; tint.disabled = !custom;
+    tint.onchange = () => { cur.tint = tint.checked; reapply(rerender); };
+    const info = GA.BUILTIN_SETS[cfg.artSet] ? GA.BUILTIN_SETS[cfg.artSet].desc + ' It cannot be changed - press "Duplicate" to make an editable copy.' : `${Object.keys(cur.art).length} picture(s). Buildings / units without a picture in this set are drawn like V1.`;
+    return el('div', { class: 'newbox', style: 'border-style:solid;border-color:rgba(34,211,238,.4)' },
+      el('div', { class: 'row' },
+        el('label', {}, 'Picture set used in the game (press Save changes to apply)', sel),
+        el('button', { class: 'primary', onclick: () => { const n = ask('Name of the new (empty) picture set:', 'My set'); if (n && createSet(n, null)) reapply(rerender); } }, '＋ New set'),
+        el('button', { onclick: () => { const n = ask('Name of the copy:', setName(cfg.artSet) + ' copy'); if (n && createSet(n, cfg.artSet)) reapply(rerender); } }, 'Duplicate'),
+        custom ? el('button', { onclick: () => { const n = ask('New name:', cur.name); if (n) { cur.name = n; reapply(rerender); } } }, 'Rename') : null,
+        custom ? el('button', { class: 'danger', onclick: () => { if (!confirm(GA.tt(`Delete the picture set "${cur.name}"?`))) return; delete cfg.sets[cfg.artSet]; cfg.artSet = GA.DEFAULT_ART_SET; reapply(rerender); } }, 'Delete') : null),
+      el('label', { class: 'toggle', style: 'margin-top:10px', title: 'The neon-cyan parts of the pictures take the colour of the player (red, green, orange ...)' }, tint, 'Recolour the cyan lights to the team colour'),
+      el('p', { class: 'note', style: 'margin:8px 0 0' }, info));
+  }
+  async function openStudio(t, kind, rerender) {
     const d = GA.DEFS[t];
+    if (isBuiltinSet(cfg.artSet)) { // built-in sets cannot be edited: continue in a copy
+      const from = cfg.artSet, n = prompt(GA.tt(`"${setName(from)}" is built in and cannot be changed. Your pictures go into a new set - name it:`), from === 'v1' ? 'My set' : setName(from) + ' copy');
+      if (!n || n.trim().length < 2) return;
+      if (!createSet(n.trim().slice(0, 24), from === 'v1' ? null : from)) return;
+      GA.applyConfig(cfg); await GA.preloadArt(); refreshDirty(); rerender(); // the page now shows the new set
+    }
+    const set = cfg.sets[cfg.artSet], own = set.art[t], sid = cfg.artSet;
     GA.openArtStudio({
-      type: t, kind, name: d.name, desc: d.desc, art: cfg.art[t], inherited: !!d.custom, api,
+      type: t, kind, name: d.name, desc: d.desc, art: own, artUrl: own ? GA.artFor(cfg, sid, t).url : null, tint: set.tint, inherited: !!d.custom, api,
       onDone: async (result) => {
-        if (result) cfg.art[t] = result; else delete cfg.art[t];
+        if (result) set.art[t] = result; else delete set.art[t];
         GA.applyConfig(cfg);
         await GA.preloadArt(); // so the card shows the new picture straight away
         refreshDirty();
@@ -127,8 +170,8 @@
     const card = el('div', { class: 'card' + (custom ? ' custom' : '') + (off ? ' off' : '') + (!custom && cardMod('defs', t) ? ' mod' : ''), id: 'tc_' + t });
     const tags = el('div', { class: 'tags' });
     if (custom) tags.append(el('span', { class: 'tag gold' }, '★ CUSTOM'), el('span', { class: 'tag' }, 'based on ' + GA.BASE.defs[d.base].name));
-    if (cfg.art[t]) tags.append(el('span', { class: 'tag blue' }, '🖼 OWN PICTURE'));
-    else if (custom && d.art) tags.append(el('span', { class: 'tag blue' }, '🖼 uses ' + GA.BASE.defs[d.base].name + ' picture'));
+    const curSet = cfg.sets[cfg.artSet], ownPic = curSet && curSet.art[t];
+    if (d.art) tags.append(el('span', { class: 'tag blue' }, '🖼 ' + (ownPic && !ownPic.ref ? 'OWN PICTURE' : custom && !GA.artFor(cfg, cfg.artSet, t) ? 'uses ' + GA.BASE.defs[d.base].name + ' picture' : setName(cfg.artSet))));
     if (off) tags.append(el('span', { class: 'tag red' }, 'SWITCHED OFF'));
     else if (blocked(t)) tags.append(el('span', { class: 'tag red' }, 'NEEDS A SWITCHED-OFF BUILDING'));
     const toggle = el('input', { type: 'checkbox' });
@@ -172,6 +215,7 @@
       ? 'Structures. The picture is what the game draws - press "🎨 Draw" to give any building a new picture (AI, your own file, or hand drawn). Untick "In battle" to keep a building off the battlefield, or create your own building as a copy of an existing one (it acts like the original: a copy of the Barracks trains infantry, a copy of the Ore Processor refines ore, ...). Yellow fields differ from the built-in defaults (hover a field to see the default). "Requires" is a comma separated list of building ids.'
       : 'Units. The picture is what the game draws - press "🎨 Draw" to give any unit a new picture (AI, your own file, or hand drawn). Untick "In battle" to keep a unit off the battlefield, or create your own unit as a copy of an existing one with its own name, stats and weapon. Speed is in tiles per second; build time is in seconds at full power.'));
     const rerender = () => defCards(kind);
+    view.append(setBar(rerender));
     const types = GA.TYPES.filter((t) => GA.DEFS[t].kind === kind);
     const offCount = types.filter((t) => isOff(t)).length;
 
@@ -425,7 +469,7 @@
   };
   $('btnDiscard').onclick = async () => { cfg = JSON.parse(saved); GA.applyConfig(cfg); await GA.preloadArt(); showTab(tab); msg('Edits discarded.'); };
   $('btnReset').onclick = async () => {
-    if (!confirm(GA.tt('Reset EVERY value to the built-in defaults from data.js?'))) return;
+    if (!confirm(GA.tt('Reset EVERY value to the built-in defaults from data.js? (this also removes your own picture sets)'))) return;
     try { const j = await api('/api/admin/config/reset', 'POST'); load(j.config); await GA.preloadArt(); showTab(tab); msg('All values reset to defaults.', 'ok'); } catch (e) { msg(e.message, 'err'); }
   };
   window.addEventListener('beforeunload', (e) => { if (dirty() || (GA.mapEditorDirty && GA.mapEditorDirty())) { e.preventDefault(); e.returnValue = ''; } });

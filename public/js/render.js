@@ -119,10 +119,11 @@
   function hazard(v, x, y, w, z, zh, side) { /* decorative bay door handled inline */ }
 
   // ------------------------------------------------------------------ pictures made in the admin "Studio" (AI / uploaded / hand drawn)
-  // d.art = { id, v, s, y, f } -> /art/<id>-<v>.png, a strip of f animation frames side by side (f = 1: a single picture).
+  // d.art = { id, v, s, y, f, tint, url } (built in config.js from the active picture set); the file is a strip of f
+  // animation frames side by side (f = 1: a single picture). tint: the cyan lights are recoloured to the owner's colour.
   // While a picture is still loading the built-in drawing is used.
   const artCache = new Map(), artWaiters = new Map();
-  const artUrl = (a) => `/art/${a.id}-${a.v}.png`;
+  const artUrl = (a) => a.url;
   function artSprite(a) {
     if (!a) return null;
     if (a.img) return a.img;
@@ -140,6 +141,50 @@
   }
   const onArtReady = (a, fn) => { const url = artUrl(a), l = artWaiters.get(url) || []; l.push(fn); artWaiters.set(url, l); };
   const imgW = (img) => img.naturalWidth || img.width, imgH = (img) => img.naturalHeight || img.height;
+  // Team colours: the neon-cyan parts of a picture take the colour of its owner. Recoloured copies are made once per
+  // (picture, colour). Only bright, saturated pixels near cyan change, so armor, white highlights and warning lights stay.
+  const tintCache = new WeakMap();
+  const hsv = (r, g, b) => {
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    let h = 0;
+    if (d) h = mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [h * 60, mx ? d / mx : 0, mx];
+  };
+  const hsvToRgb = (h, s, v) => {
+    const f = (n) => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+    return [f(5), f(3), f(1)];
+  };
+  const CYAN_H = 188;
+  function tinted(img, hex) {
+    const n = parseInt(hex.slice(1), 16), [th, ts] = hsv((n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+    const sat = Math.min(1.15, ts / 0.85);
+    if (Math.abs(((th - CYAN_H + 540) % 360) - 180) < 5 && sat > 0.95) return img; // already cyan
+    let m = tintCache.get(img);
+    if (!m) tintCache.set(img, (m = new Map()));
+    let c = m.get(hex);
+    if (c) return c;
+    const w = imgW(img), h = imgH(img);
+    c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0);
+    try {
+      const id = x.getImageData(0, 0, w, h), d = id.data;
+      for (let i = 0; i < d.length; i += 4) {
+        if (!d[i + 3]) continue;
+        const [ph, ps, pv] = hsv(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255);
+        const dh = Math.abs(ph - CYAN_H);
+        if (dh > 42 || ps < 0.25 || pv < 0.3) continue;
+        const wh = dh < 26 ? 1 : 1 - (dh - 26) / 16, ws = Math.min(1, (ps - 0.25) / 0.2), k = wh * ws;
+        const [r, g, b] = hsvToRgb(th, Math.min(1, ps * sat), pv);
+        d[i] = d[i] + (r * 255 - d[i]) * k; d[i + 1] = d[i + 1] + (g * 255 - d[i + 1]) * k; d[i + 2] = d[i + 2] + (b * 255 - d[i + 2]) * k;
+      }
+      x.putImageData(id, 0, 0);
+    } catch (e) { return img; } // pixels not readable: keep the original colours
+    m.set(hex, c);
+    return c;
+  }
+  const artImage = (a, img, col) => (a.tint ? tinted(img, col.main) : img);
+
   // Resolves when every picture of the current config is loaded (or after 5 s, so a slow link never blocks the game).
   GA.preloadArt = function () {
     const jobs = [];
@@ -193,6 +238,7 @@
     // owner-coloured base plate keeps the sides readable
     poly(ctx, [P(v, bx, by, 0), P(v, bx + w, by, 0), P(v, bx + w, by + h, 0), P(v, bx, by + h, 0)], shade(col.dark, 0.7), col.main, 2 * z);
     const sz = artSize(e.def, a, img), sw = sz.w * z, sh = sz.h * z, fw = imgW(img) / (a.f || 1), fr = artFrame(a, e.def, e, t);
+    img = artImage(a, img, col);
     const [sx, sy] = P(v, bx + w / 2, by + h / 2, 0);
     const bottom = sy + (w + h) * v.B * 0.5 * 1.05 + a.y * sh;
     ctx.drawImage(img, fr * fw, 0, fw, imgH(img), sx - sw / 2, bottom - sh, sw, sh);
@@ -210,6 +256,7 @@
     if (kind === 'air') shadowAt(v, x, y, 14, 6.5, 0.22); else shadowAt(v, x, y, kind === 'inf' ? 8 : 12 + r * 30, kind === 'inf' ? 3.6 : 6 + r * 14);
     ringGround(v, x, y, Math.max(0.3, r * 0.95), col.main, 1.8 * z, 0.75);
     const sz = artSize(d, a, img), wpx = sz.w * z, hpx = sz.h * z, fw = imgW(img) / (a.f || 1), fr = artFrame(a, d, e, t);
+    img = artImage(a, img, col);
     const [sx, sy] = P(v, x, y, 0);
     // pictures face right; turn them around when the unit heads left on the screen (with a dead zone so it does not flicker)
     const fx = Math.cos(e.ang) - Math.sin(e.ang);
@@ -1100,9 +1147,10 @@
     if (pic) {
       const col = PLAYER_COLORS[owner] || PLAYER_COLORS[0];
       const fw = imgW(pic) / (d.art.f || 1), k = Math.min(70 / fw, 48 / imgH(pic)), dw = fw * k, dh = imgH(pic) * k; // first frame
+      const src = d.art.tint ? tinted(pic, col.main) : pic;
       ctx.fillStyle = col.main; ctx.globalAlpha = 0.55;
       ctx.beginPath(); ctx.ellipse(38, 51, Math.min(30, dw * 0.42), 4, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
-      ctx.drawImage(pic, 0, 0, fw, imgH(pic), (76 - dw) / 2, 53 - dh, dw, dh);
+      ctx.drawImage(src, 0, 0, fw, imgH(pic), (76 - dw) / 2, 53 - dh, dw, dh);
     } else {
       let zoom, ox, oy, e;
       if (d.kind === 'b') {
@@ -1127,7 +1175,7 @@
   }
   GA.getIcon = function (type, owner) {
     const d = DEFS[type];
-    const key = type + '|' + (d.look || '') + '|' + (PLAYER_COLORS[owner] ? PLAYER_COLORS[owner].main : owner) + (d.art ? '|' + d.art.id + '-' + d.art.v : '');
+    const key = type + '|' + (d.look || '') + '|' + (PLAYER_COLORS[owner] ? PLAYER_COLORS[owner].main : owner) + (d.art ? '|' + d.art.url : '');
     if (iconCache.has(key)) return iconCache.get(key);
     const c = document.createElement('canvas');
     c.width = 76 * 2; c.height = 56 * 2;
@@ -1153,7 +1201,7 @@
       poly(ctx, q, (i + j) & 1 ? '#152535' : '#17293b', 'rgba(90,190,255,0.08)', 1);
     }
     const saved = d.art;
-    d.art = art && art.img ? { id: type, v: 'preview', s: art.s, y: art.y, f: art.f || 1, img: art.img } : undefined;
+    d.art = art && art.img ? { id: type, v: 'preview', s: art.s, y: art.y, f: art.f || 1, tint: !!art.tint, img: art.img } : undefined;
     try {
       if (d.kind === 'b') {
         const e = { type, def: d, owner, bx: -d.w / 2, by: -d.h / 2, w: d.w, h: d.h, x: 0, y: 0, id: 3, ang: 0.6, hp: 1, mhp: 1 };
