@@ -7,7 +7,7 @@
   let token = null;
   try { token = localStorage.getItem('ga.token'); } catch (e) { /* ignore */ }
   let me = null;
-  let cfg = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [] }; // working overrides
+  let cfg = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [], art: {} }; // working overrides
   let saved = '';
   let tab = 'structures';
   let roomTimer = null;
@@ -108,11 +108,27 @@
     while (taken(id)) id = prefix + base.slice(0, 9 - String(n).length) + n++;
     return id;
   };
+  function openStudio(t, kind, rerender) {
+    const d = GA.DEFS[t];
+    GA.openArtStudio({
+      type: t, kind, name: d.name, desc: d.desc, art: cfg.art[t], inherited: !!d.custom, api,
+      onDone: async (result) => {
+        if (result) cfg.art[t] = result; else delete cfg.art[t];
+        GA.applyConfig(cfg);
+        await GA.preloadArt(); // so the card shows the new picture straight away
+        refreshDirty();
+        if (result) msg('Picture ready. Press "Save changes" to use it in the game.', 'dirty');
+        rerender();
+      },
+    });
+  }
   function typeCard(t, kind, rerender) {
     const d = GA.DEFS[t], custom = !!d.custom, prot = GA.PROTECTED_TYPES.includes(t), off = isOff(t);
     const card = el('div', { class: 'card' + (custom ? ' custom' : '') + (off ? ' off' : '') + (!custom && cardMod('defs', t) ? ' mod' : ''), id: 'tc_' + t });
     const tags = el('div', { class: 'tags' });
     if (custom) tags.append(el('span', { class: 'tag gold' }, '★ CUSTOM'), el('span', { class: 'tag' }, 'based on ' + GA.BASE.defs[d.base].name));
+    if (cfg.art[t]) tags.append(el('span', { class: 'tag blue' }, '🖼 OWN PICTURE'));
+    else if (custom && d.art) tags.append(el('span', { class: 'tag blue' }, '🖼 uses ' + GA.BASE.defs[d.base].name + ' picture'));
     if (off) tags.append(el('span', { class: 'tag red' }, 'SWITCHED OFF'));
     else if (blocked(t)) tags.append(el('span', { class: 'tag red' }, 'NEEDS A SWITCHED-OFF BUILDING'));
     const toggle = el('input', { type: 'checkbox' });
@@ -122,7 +138,8 @@
       if (!toggle.checked) cfg.disabled.push(t);
       GA.applyConfig(cfg); refreshDirty(); rerender();
     };
-    const head = el('div', { class: 'thead' }, iconEl(t),
+    const drawBtn = el('button', { class: 'ghost', title: 'Draw a picture for this ' + (kind === 'b' ? 'building' : 'unit') + ' with AI, from a file, or by hand', onclick: () => openStudio(t, kind, rerender) }, '🎨 Draw');
+    const head = el('div', { class: 'thead' }, el('div', { class: 'picwrap' }, iconEl(t), drawBtn),
       el('div', { class: 'tt' }, el('h3', {}, custom ? cfg.custom.types[t].name : GA.BASE.defs[t].name, el('small', {}, t)), tags),
       el('label', { class: 'toggle', title: prot ? 'The game cannot run without this - it always stays on.' : 'Off = it never appears on the battlefield (cannot be built or trained; bots skip it).' }, toggle, 'In battle'));
     card.append(head);
@@ -152,8 +169,8 @@
     GA.applyConfig(cfg);
     const noun = kind === 'b' ? 'building' : 'unit';
     view.append(el('p', { class: 'note' }, kind === 'b'
-      ? 'Structures. The picture is what the game draws. Untick "In battle" to keep a building off the battlefield, or create your own building as a copy of an existing one (it acts like the original: a copy of the Barracks trains infantry, a copy of the Ore Processor refines ore, ...). Yellow fields differ from the built-in defaults (hover a field to see the default). "Requires" is a comma separated list of building ids.'
-      : 'Units. The picture is what the game draws. Untick "In battle" to keep a unit off the battlefield, or create your own unit as a copy of an existing one with its own name, stats and weapon. Speed is in tiles per second; build time is in seconds at full power.'));
+      ? 'Structures. The picture is what the game draws - press "🎨 Draw" to give any building a new picture (AI, your own file, or hand drawn). Untick "In battle" to keep a building off the battlefield, or create your own building as a copy of an existing one (it acts like the original: a copy of the Barracks trains infantry, a copy of the Ore Processor refines ore, ...). Yellow fields differ from the built-in defaults (hover a field to see the default). "Requires" is a comma separated list of building ids.'
+      : 'Units. The picture is what the game draws - press "🎨 Draw" to give any unit a new picture (AI, your own file, or hand drawn). Untick "In battle" to keep a unit off the battlefield, or create your own unit as a copy of an existing one with its own name, stats and weapon. Speed is in tiles per second; build time is in seconds at full power.'));
     const rerender = () => defCards(kind);
     const types = GA.TYPES.filter((t) => GA.DEFS[t].kind === kind);
     const offCount = types.filter((t) => isOff(t)).length;
@@ -299,7 +316,7 @@
   }
 
   // ---------------------------------------------------------------- sign-in logs
-  const LOG_EVENTS = ['login', 'login_failed', 'login_blocked', 'register', 'logout', 'session_replaced', 'password_reset', 'role_change', 'stats_reset', 'account_deleted', 'config_saved', 'config_reset', 'map_saved', 'map_deleted', 'room_closed'];
+  const LOG_EVENTS = ['login', 'login_failed', 'login_blocked', 'register', 'logout', 'session_replaced', 'password_reset', 'role_change', 'stats_reset', 'account_deleted', 'config_saved', 'config_reset', 'art_generated', 'art_uploaded', 'map_saved', 'map_deleted', 'room_closed'];
   const logState = { event: '', user: '', q: '', ok: '', rows: [], done: false };
   function device(ua) {
     const b = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : /curl|node|python|axios/i.test(ua) ? 'script' : ua ? 'Browser' : '—';
@@ -401,14 +418,15 @@
     try {
       const j = await api('/api/admin/config', 'PUT', { config: cfg });
       load(j.config);
+      await GA.preloadArt();
       showTab(tab);
       msg(j.appliedNow ? 'Saved. New games use these values.' : 'Saved. A game is running - values apply when it ends (new rooms started while idle).', 'ok');
     } catch (e) { msg(e.message, 'err'); }
   };
-  $('btnDiscard').onclick = () => { cfg = JSON.parse(saved); GA.applyConfig(cfg); showTab(tab); msg('Edits discarded.'); };
+  $('btnDiscard').onclick = async () => { cfg = JSON.parse(saved); GA.applyConfig(cfg); await GA.preloadArt(); showTab(tab); msg('Edits discarded.'); };
   $('btnReset').onclick = async () => {
     if (!confirm(GA.tt('Reset EVERY value to the built-in defaults from data.js?'))) return;
-    try { const j = await api('/api/admin/config/reset', 'POST'); load(j.config); showTab(tab); msg('All values reset to defaults.', 'ok'); } catch (e) { msg(e.message, 'err'); }
+    try { const j = await api('/api/admin/config/reset', 'POST'); load(j.config); await GA.preloadArt(); showTab(tab); msg('All values reset to defaults.', 'ok'); } catch (e) { msg(e.message, 'err'); }
   };
   window.addEventListener('beforeunload', (e) => { if (dirty() || (GA.mapEditorDirty && GA.mapEditorDirty())) { e.preventDefault(); e.returnValue = ''; } });
 
@@ -420,6 +438,7 @@
     $('who').textContent = 'Signed in as ' + me.name;
     const j = await api('/api/admin/config');
     load(j.config);
+    await GA.preloadArt();
     $('app').classList.remove('hidden'); $('bar').classList.remove('hidden');
     buildTabs(); showTab('structures');
   })();

@@ -444,11 +444,13 @@
     hitEnt(e, sx, sy) {
       const v = this.r.v, P = GA.drawHelpers.P;
       if (e.ghost) return false;
-      if (e.isB) return this.hitBox(e.bx, e.by, e.w, e.h, B_HEIGHT[e.def.look || e.type] || 1, sx, sy);
+      if (e.isB) return this.hitBox(e.bx, e.by, e.w, e.h, (GA.artBuildingHeight && GA.artBuildingHeight(e.def)) || B_HEIGHT[e.def.look || e.type] || 1, sx, sy);
       const alt = e.def.fly ? 1.6 : 0;
       const [cx, cy] = P(v, e.rx, e.ry, alt);
       const inf = e.def.cat === 'infantry';
-      const hw = (inf ? 9 : e.def.r * 44 + 8) * v.zoom, hgt = (inf ? 24 : (e.def.look || e.type) === 'titan' ? 46 : 28) * v.zoom;
+      let hw = (inf ? 9 : e.def.r * 44 + 8) * v.zoom, hgt = (inf ? 24 : (e.def.look || e.type) === 'titan' ? 46 : 28) * v.zoom;
+      const box = GA.artUnitBox && GA.artUnitBox(e.def); // a picture may be bigger than the built-in drawing
+      if (box) { hw = Math.max(hw, box.w * 0.4 * v.zoom); hgt = Math.max(hgt, box.h * 0.85 * v.zoom); }
       return sx >= cx - hw && sx <= cx + hw && sy >= cy - hgt && sy <= cy + 6 * v.zoom;
     }
     pick(sx, sy) {

@@ -118,8 +118,92 @@
   }
   function hazard(v, x, y, w, z, zh, side) { /* decorative bay door handled inline */ }
 
+  // ------------------------------------------------------------------ pictures made in the admin "Studio" (AI / uploaded / hand drawn)
+  // d.art = { id, v, s, y } -> /art/<id>-<v>.png. While a picture is still loading the built-in drawing is used.
+  const artCache = new Map(), artWaiters = new Map();
+  const artUrl = (a) => `/art/${a.id}-${a.v}.png`;
+  function artSprite(a) {
+    if (!a) return null;
+    if (a.img) return a.img;
+    const url = artUrl(a);
+    let r = artCache.get(url);
+    if (!r) {
+      const img = new Image();
+      r = { img, ok: false, bad: false };
+      artCache.set(url, r);
+      img.onload = () => { r.ok = true; const w = artWaiters.get(url); artWaiters.delete(url); if (w) for (const f of w) f(); };
+      img.onerror = () => { r.bad = true; };
+      img.src = url;
+    }
+    return r.ok ? r.img : null;
+  }
+  const onArtReady = (a, fn) => { const url = artUrl(a), l = artWaiters.get(url) || []; l.push(fn); artWaiters.set(url, l); };
+  const imgW = (img) => img.naturalWidth || img.width, imgH = (img) => img.naturalHeight || img.height;
+  // Resolves when every picture of the current config is loaded (or after 5 s, so a slow link never blocks the game).
+  GA.preloadArt = function () {
+    const jobs = [];
+    for (const t of GA.TYPES) {
+      const a = DEFS[t].art;
+      if (!a || a.img) continue;
+      artSprite(a);
+      const r = artCache.get(artUrl(a));
+      if (r && !r.ok && !r.bad) jobs.push(new Promise((res) => { r.img.addEventListener('load', res); r.img.addEventListener('error', res); }));
+    }
+    return Promise.race([Promise.all(jobs), new Promise((res) => setTimeout(res, 5000))]);
+  };
+  const unitKind = (d) => (d.fly ? 'air' : d.cat === 'infantry' ? 'inf' : 'veh');
+  // sprite size in screen pixels at zoom 1
+  const unitSpriteW = (d, a) => (unitKind(d) === 'inf' ? 34 : 40 + (d.r || 0.4) * 60) * a.s;
+  const bldSpriteW = (d, a) => (d.w + d.h) * 32 * 1.02 * a.s;
+  // click areas for game.js (tile heights / pixel boxes matching what is drawn)
+  GA.artBuildingHeight = function (d) {
+    const img = d.art && artSprite(d.art);
+    if (!img) return 0;
+    const sh = bldSpriteW(d, d.art) * imgH(img) / imgW(img);
+    return Math.max(0.6, (sh - 16 * (d.w + d.h)) / 34);
+  };
+  GA.artUnitBox = function (d) {
+    const img = d.art && artSprite(d.art);
+    if (!img) return null;
+    const w = unitSpriteW(d, d.art);
+    return { w, h: w * imgH(img) / imgW(img) };
+  };
+
+  function drawArtBuilding(v, e, a, img) {
+    const ctx = v.ctx, col = PLAYER_COLORS[e.owner] || PLAYER_COLORS[0], z = v.zoom;
+    const bx = e.bx, by = e.by, w = e.w, h = e.h;
+    // owner-coloured base plate keeps the sides readable
+    poly(ctx, [P(v, bx, by, 0), P(v, bx + w, by, 0), P(v, bx + w, by + h, 0), P(v, bx, by + h, 0)], shade(col.dark, 0.7), col.main, 2 * z);
+    const sw = bldSpriteW(e.def, a) * z, sh = sw * imgH(img) / imgW(img);
+    const [sx, sy] = P(v, bx + w / 2, by + h / 2, 0);
+    const bottom = sy + (w + h) * v.B * 0.5 * 1.05 + a.y * sh;
+    ctx.drawImage(img, sx - sw / 2, bottom - sh, sw, sh);
+  }
+  function drawArtUnit(v, e, t, a, img) {
+    const ctx = v.ctx, col = PLAYER_COLORS[e.owner] || PLAYER_COLORS[0], z = v.zoom, d = e.def;
+    const x = e.rx, y = e.ry, r = d.r || 0.3, kind = unitKind(d);
+    const alt = kind === 'air' ? 1.6 + Math.sin(t * 3 + e.id) * 0.06 : 0;
+    const bob = kind === 'inf' && e.moving ? Math.abs(Math.sin(t * 11 + e.id)) * 1.4 * z : 0;
+    if (kind === 'air') shadowAt(v, x, y, 14, 6.5, 0.22); else shadowAt(v, x, y, kind === 'inf' ? 8 : 12 + r * 30, kind === 'inf' ? 3.6 : 6 + r * 14);
+    ringGround(v, x, y, Math.max(0.3, r * 0.95), col.main, 1.8 * z, 0.75);
+    const wpx = unitSpriteW(d, a) * z, hpx = wpx * imgH(img) / imgW(img);
+    const [sx, sy] = P(v, x, y, 0);
+    // pictures face right; turn them around when the unit heads left on the screen (with a dead zone so it does not flicker)
+    const fx = Math.cos(e.ang) - Math.sin(e.ang);
+    if (fx > 0.2) e.flipArt = false; else if (fx < -0.2) e.flipArt = true;
+    const foot = kind === 'inf' ? 0.94 : kind === 'air' ? 0.55 : 0.8;
+    ctx.save();
+    ctx.translate(sx, sy - alt * v.Z - bob + a.y * hpx);
+    if (e.flipArt) ctx.scale(-1, 1);
+    ctx.drawImage(img, -wpx / 2, -hpx * foot, wpx, hpx);
+    ctx.restore();
+    if (e.flash > 0) glow(ctx, sx + (e.flipArt ? -1 : 1) * wpx * 0.38, sy - alt * v.Z - hpx * (foot - 0.5), 9 * z, col.light, 0.9);
+  }
+
   // ------------------------------------------------------------------ building art
   function drawBuilding(v, e, t) {
+    const pic = e.def.art && artSprite(e.def.art);
+    if (pic) { drawArtBuilding(v, e, e.def.art, pic); return; }
     const ctx = v.ctx, d = e.def, col = PLAYER_COLORS[e.owner] || PLAYER_COLORS[0];
     const bx = e.bx, by = e.by, w = e.w, h = e.h, cx = bx + w / 2, cy = by + h / 2;
     const dark = '#1a2333', mid = '#26334a', light = '#34445f';
@@ -316,6 +400,8 @@
     return [(Math.cos(a) - Math.sin(a)) * v.A * len, (Math.cos(a) + Math.sin(a)) * v.B * len];
   }
   function drawInfantry(v, e, t) {
+    const pic = e.def.art && artSprite(e.def.art);
+    if (pic) { drawArtUnit(v, e, t, e.def.art, pic); return; }
     const ctx = v.ctx, col = PLAYER_COLORS[e.owner] || PLAYER_COLORS[0], z = v.zoom;
     const [sx, sy] = P(v, e.rx, e.ry, 0);
     shadowAt(v, e.rx, e.ry, 8, 3.6);
@@ -346,6 +432,8 @@
     }
   }
   function drawVehicle(v, e, t) {
+    const pic = e.def.art && artSprite(e.def.art);
+    if (pic) { drawArtUnit(v, e, t, e.def.art, pic); return; }
     const ctx = v.ctx, col = PLAYER_COLORS[e.owner] || PLAYER_COLORS[0], z = v.zoom;
     const x = e.rx, y = e.ry, a = e.ang;
     const mv = e.moving;
@@ -442,6 +530,8 @@
     }
   }
   function drawAir(v, e, t) {
+    const pic = e.def.art && artSprite(e.def.art);
+    if (pic) { drawArtUnit(v, e, t, e.def.art, pic); return; }
     const ctx = v.ctx, col = PLAYER_COLORS[e.owner] || PLAYER_COLORS[0], z = v.zoom;
     const x = e.rx, y = e.ry, a = e.ang;
     const alt = 1.6 + Math.sin(t * 3 + e.id) * 0.06;
@@ -963,37 +1053,80 @@
 
   // ------------------------------------------------------------------ icons for the build menu
   const iconCache = new Map();
+  // Draws a building / unit with the game's own drawing code onto a 76x56 (x2) canvas.
+  function paintIcon(ctx, type, d, owner) {
+    const S = 2;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, 76 * S, 56 * S);
+    ctx.scale(S, S);
+    const pic = d.art && artSprite(d.art);
+    if (pic) {
+      const col = PLAYER_COLORS[owner] || PLAYER_COLORS[0];
+      const k = Math.min(70 / imgW(pic), 48 / imgH(pic)), dw = imgW(pic) * k, dh = imgH(pic) * k;
+      ctx.fillStyle = col.main; ctx.globalAlpha = 0.55;
+      ctx.beginPath(); ctx.ellipse(38, 51, Math.min(30, dw * 0.42), 4, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+      ctx.drawImage(pic, (76 - dw) / 2, 53 - dh, dw, dh);
+    } else {
+      let zoom, ox, oy, e;
+      if (d.kind === 'b') {
+        const span = d.w + d.h;
+        zoom = 3.7 / span;
+        e = { type, def: d, owner, bx: -d.w / 2, by: -d.h / 2, w: d.w, h: d.h, x: 0, y: 0, id: 3, ang: 0.6, hp: 1, mhp: 1 };
+        ox = 38; oy = 36;
+        if (type === 'uplink' || type === 'conyard') oy += 6;
+      } else {
+        zoom = d.cat === 'infantry' ? 1.7 : d.fly ? 0.85 : 1.15;
+        e = { type, def: d, owner, rx: 0, ry: 0, x: 0, y: 0, ang: 0.7, id: 3, hp: 1, mhp: 1, cargo: 0, moving: false };
+        ox = 38; oy = d.cat === 'infantry' ? 44 : 38;
+        if (d.fly) oy = 53;
+      }
+      const v = { ctx, A: 32 * zoom, B: 16 * zoom, OX: ox, OY: oy, Z: 34 * zoom, zoom };
+      if (d.kind === 'b') drawBuilding(v, e, 0.5);
+      else if (d.fly) drawAir(v, e, 0.5);
+      else if (d.cat === 'infantry') drawInfantry(v, e, 0.5);
+      else drawVehicle(v, e, 0.5);
+    }
+    if (d.custom) { ctx.fillStyle = '#facc15'; ctx.strokeStyle = '#3b2f05'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(66, 4); ctx.lineTo(71, 10); ctx.lineTo(66, 16); ctx.lineTo(61, 10); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  }
   GA.getIcon = function (type, owner) {
     const d = DEFS[type];
-    const key = type + '|' + (d.look || '') + '|' + (PLAYER_COLORS[owner] ? PLAYER_COLORS[owner].main : owner);
+    const key = type + '|' + (d.look || '') + '|' + (PLAYER_COLORS[owner] ? PLAYER_COLORS[owner].main : owner) + (d.art ? '|' + d.art.id + '-' + d.art.v : '');
     if (iconCache.has(key)) return iconCache.get(key);
     const c = document.createElement('canvas');
-    const S = 2;
-    c.width = 76 * S; c.height = 56 * S;
+    c.width = 76 * 2; c.height = 56 * 2;
     const ctx = c.getContext('2d');
-    ctx.scale(S, S);
-    let zoom, ox, oy, e;
-    if (d.kind === 'b') {
-      const span = d.w + d.h;
-      zoom = Math.min(0.95, 5.2 / span * 0.62 * 2.2 / 2.2);
-      zoom = 3.7 / span;
-      e = { type, def: d, owner, bx: -d.w / 2, by: -d.h / 2, w: d.w, h: d.h, x: 0, y: 0, id: 3, ang: 0.6, hp: 1, mhp: 1 };
-      ox = 38; oy = 36 - (d.w + d.h) * 0.0;
-      if (type === 'uplink' || type === 'conyard') oy += 6;
-    } else {
-      zoom = d.def === undefined && d.cat === 'infantry' ? 1.7 : d.cat === 'infantry' ? 1.9 : d.fly ? 0.85 : 1.15;
-      e = { type, def: d, owner, rx: 0, ry: 0, x: 0, y: 0, ang: 0.7, id: 3, hp: 1, mhp: 1, cargo: 0, moving: false };
-      ox = 38; oy = d.cat === 'infantry' ? 44 : 38;
-      if (d.fly) oy = 53;
-    }
-    const v = { ctx, A: 32 * zoom, B: 16 * zoom, OX: ox, OY: oy, Z: 34 * zoom, zoom };
-    if (d.kind === 'b') drawBuilding(v, e, 0.5);
-    else if (d.fly) drawAir(v, e, 0.5);
-    else if (d.cat === 'infantry') drawInfantry(v, e, 0.5);
-    else drawVehicle(v, e, 0.5);
-    if (d.custom) { ctx.fillStyle = '#facc15'; ctx.strokeStyle = '#3b2f05'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(66, 4); ctx.lineTo(71, 10); ctx.lineTo(66, 16); ctx.lineTo(61, 10); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    paintIcon(ctx, type, d, owner);
+    // the picture is still on its way: the icon repaints itself (in place) when it arrives
+    if (d.art && !d.art.img && !artSprite(d.art)) onArtReady(d.art, () => paintIcon(ctx, type, d, owner));
     iconCache.set(key, c);
     return c;
+  };
+
+  // A larger, live preview used by the admin Studio: the picture (or the built-in drawing when art is null) on a small map patch.
+  // art = { img, s, y }
+  GA.renderPreview = function (canvas, type, art, owner, foot) {
+    const d = DEFS[type], ctx = canvas.getContext('2d'), CW = canvas.width, CH = canvas.height;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#05080d'; ctx.fillRect(0, 0, CW, CH);
+    const zoom = d.kind === 'b' ? Math.min(1.1, 5 / (d.w + d.h)) : d.cat === 'infantry' ? 2.6 : 1.7;
+    const v = { ctx, A: 32 * zoom, B: 16 * zoom, OX: CW / 2, OY: CH * (d.kind === 'b' ? 0.5 : d.fly ? 0.72 : 0.62), Z: 34 * zoom, zoom };
+    for (let i = -5; i <= 5; i++) for (let j = -5; j <= 5; j++) {
+      const q = [P(v, i, j, 0), P(v, i + 1, j, 0), P(v, i + 1, j + 1, 0), P(v, i, j + 1, 0)];
+      poly(ctx, q, (i + j) & 1 ? '#152535' : '#17293b', 'rgba(90,190,255,0.08)', 1);
+    }
+    const saved = d.art;
+    d.art = art && art.img ? { id: type, v: 'preview', s: art.s, y: art.y, img: art.img } : undefined;
+    try {
+      if (d.kind === 'b') {
+        const e = { type, def: d, owner, bx: -d.w / 2, by: -d.h / 2, w: d.w, h: d.h, x: 0, y: 0, id: 3, ang: 0.6, hp: 1, mhp: 1 };
+        drawBuilding(v, e, 0.5);
+        if (foot) poly(ctx, [P(v, e.bx, e.by, 0), P(v, e.bx + d.w, e.by, 0), P(v, e.bx + d.w, e.by + d.h, 0), P(v, e.bx, e.by + d.h, 0)], null, 'rgba(255,255,255,0.75)', 1.2);
+      } else {
+        const e = { type, def: d, owner, rx: 0, ry: 0, x: 0, y: 0, ang: -Math.PI / 4, id: 3, hp: 1, mhp: 1, cargo: 0, moving: false };
+        if (d.fly) drawAir(v, e, 0.5); else if (d.cat === 'infantry') drawInfantry(v, e, 0.5); else drawVehicle(v, e, 0.5);
+        if (foot) ringGround(v, 0, 0, Math.max(0.3, d.r || 0.3), 'rgba(255,255,255,0.75)', 1.2, 1);
+      }
+    } finally { d.art = saved; }
   };
 
   GA.Renderer = Renderer;

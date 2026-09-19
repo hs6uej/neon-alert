@@ -1,6 +1,7 @@
 // Neon Alert server: accounts, sign-in logs, stats & matchmaking, admin API, static files,
 // WebSocket lobby/rooms + authoritative simulation
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -21,6 +22,10 @@ const TRUST_PROXY = /^(1|true|yes)$/i.test(process.env.TRUST_PROXY || '');
 const MM_PAIR_WAIT = +process.env.MM_PAIR_WAIT || 15;   // seconds before a 2-player match is accepted
 const MM_BOT_WAIT = +process.env.MM_BOT_WAIT || 40;     // seconds before a lone player gets AI opponents
 const MM_START_DELAY = +process.env.MM_START_DELAY || 5; // "match found" countdown
+// AI pictures for buildings / units (Admin > Structures / Units > "Draw"). The key never leaves the server.
+const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim();
+const GEMINI_IMAGE_MODEL = (process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image').trim();
+const GEMINI_BASE = (process.env.GEMINI_API_BASE || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
@@ -45,6 +50,87 @@ function writeJson(name, obj) {
     try { fs.writeFileSync(tmp, JSON.stringify(obj, null, 2)); fs.renameSync(tmp, file); } catch (e) { console.error('write failed', name, e.message); }
   }, 150);
 }
+
+// ------------------------------------------------------------------ pictures (data/art/<type>-<version>.png)
+const ART_DIR = path.join(DATA_DIR, 'art');
+fs.mkdirSync(ART_DIR, { recursive: true });
+const ART_FILE_RE = /^([a-z0-9_]{2,16})-(\d{1,13})\.png$/;
+const ART_MAX_BYTES = 600 * 1024, ART_MAX_SIDE = 1024, ART_MAX_FILES = 300;
+const artPath = (id, v) => path.join(ART_DIR, id + '-' + v + '.png');
+const validArtType = (id) => typeof id === 'string' && (GA.BUILTIN_TYPES.includes(id) || GA.CUSTOM_TYPE_ID.test(id));
+// Reads width / height of a PNG without decoding it; null when it is not a PNG.
+function pngSize(buf) {
+  if (buf.length < 33 || buf.readUInt32BE(0) !== 0x89504e47 || buf.readUInt32BE(4) !== 0x0d0a1a0a || buf.toString('latin1', 12, 16) !== 'IHDR') return null;
+  return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+}
+// Files that no saved config points to are removed after an hour (an upload waits for the admin to press Save).
+function gcArt(keep) {
+  const used = new Set(Object.entries(keep.art || {}).map(([id, a]) => id + '-' + a.v + '.png'));
+  let names = [];
+  try { names = fs.readdirSync(ART_DIR); } catch { return; }
+  for (const n of names) {
+    if (used.has(n)) continue;
+    try { const f = path.join(ART_DIR, n); if (Date.now() - fs.statSync(f).mtimeMs > 3600 * 1000) fs.unlinkSync(f); } catch { /* ignore */ }
+  }
+}
+// Drops picture references whose file is missing (e.g. after restoring an old data folder).
+function withExistingArt(cfg) {
+  for (const [id, a] of Object.entries(cfg.art || {})) if (!fs.existsSync(artPath(id, a.v))) delete cfg.art[id];
+  return cfg;
+}
+
+const ART_STYLES = {
+  neon: 'Clean stylized digital game art, dark steel armor with glowing cyan neon accents, crisp edges, soft shading, high contrast.',
+  painted: 'Hand-painted concept-art look, rich saturated colors, detailed textures, dramatic lighting.',
+  pixel: 'Chunky retro pixel art with a limited palette, hard pixel edges, no blur.',
+  toon: 'Bold cartoon game art, thick clean outlines, flat bright colors with simple cel shading.',
+};
+function artPrompt(kind, subject, style, hasRef) {
+  return `Design ${kind === 'b' ? 'a single sci-fi BUILDING' : 'a single sci-fi military UNIT (vehicle, walker, aircraft or soldier)'} as a sprite for a real-time strategy game. ` +
+    `Subject: ${subject}. ${ART_STYLES[style] || ART_STYLES.neon} ` +
+    `Camera: isometric 2.5D, high three-quarter view from above${kind === 'u' ? ', the unit faces to the RIGHT of the image' : ''}. ` +
+    (hasRef ? 'The attached image is the current picture (or a rough sketch): keep its overall design, proportions and silhouette unless the subject asks for a change. ' : '') +
+    'Show ONE object, centered, fully inside the image with a small margin. No text, no logos, no UI, no ground plane, no scenery, no cast shadow. ' +
+    'The background must be one perfectly flat solid pure magenta color (#FF00FF) with nothing else in it, and the object itself must not contain magenta.';
+}
+let artBusy = 0;
+function geminiGenerate(text, ref) {
+  return new Promise((resolve, reject) => {
+    if (!GEMINI_API_KEY) return reject(Object.assign(new Error('AI drawing is not set up: put GEMINI_API_KEY in the .env file and restart the server.'), { status: 503 }));
+    const parts = [{ text }];
+    if (ref) parts.push({ inline_data: { mime_type: ref.mime, data: ref.data } });
+    const body = JSON.stringify({ contents: [{ parts }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } });
+    const u = new URL(`${GEMINI_BASE}/v1beta/models/${encodeURIComponent(GEMINI_IMAGE_MODEL)}:generateContent`);
+    const req = (u.protocol === 'http:' ? http : https).request(u, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'x-goog-api-key': GEMINI_API_KEY } }, (res) => {
+      const chunks = []; let size = 0;
+      res.on('data', (c) => { size += c.length; if (size > 30 * 1024 * 1024) req.destroy(new Error('AI answer too large')); else chunks.push(c); });
+      res.on('end', () => {
+        let j;
+        try { j = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return reject(Object.assign(new Error('AI service sent an unreadable answer'), { status: 502 })); }
+        if (res.statusCode >= 400 || j.error) {
+          const msg = String((j.error && j.error.message) || 'HTTP ' + res.statusCode).replace(/AIza[\w-]+/g, '<key>').slice(0, 300);
+          return reject(Object.assign(new Error('AI service: ' + msg), { status: res.statusCode === 429 ? 429 : 502 }));
+        }
+        const cand = (j.candidates || [])[0], cp = (cand && cand.content && cand.content.parts) || [];
+        const img = cp.find((p) => (p.inlineData || p.inline_data));
+        if (!img) {
+          const why = (j.promptFeedback && j.promptFeedback.blockReason) || (cand && cand.finishReason) || 'no picture returned';
+          const said = cp.map((p) => p.text).filter(Boolean).join(' ').slice(0, 200);
+          return reject(Object.assign(new Error('The AI did not draw anything (' + why + ')' + (said ? ': ' + said : '') + '. Try a different description.'), { status: 422 }));
+        }
+        const d = img.inlineData || img.inline_data;
+        resolve({ mime: d.mimeType || d.mime_type || 'image/png', data: d.data });
+      });
+    });
+    req.setTimeout(120000, () => req.destroy(new Error('The AI took too long to answer')));
+    req.on('error', (e) => reject(e.status ? e : Object.assign(new Error(String(e.message).replace(/AIza[\w-]+/g, '<key>')), { status: 502 })));
+    req.end(body);
+  });
+}
+const dataUrl = (s, max) => {
+  const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(s || ''));
+  return m && m[2].length <= max ? { mime: m[1], data: m[2] } : null;
+};
 
 // ------------------------------------------------------------------ users / sessions
 const db = readJson('users.json', { users: {} });
@@ -173,8 +259,9 @@ GA.setCustomMaps(savedMaps);
 const publicMaps = () => savedMaps.map(({ id, name, desc, terrain, ore, starts, neutrals }) => ({ id, name, desc, terrain, ore, starts, neutrals }));
 const saveMaps = () => { GA.setCustomMaps(savedMaps); writeJson('maps.json', { maps: savedMaps }); };
 
-let savedConfig = GA.cleanConfig(readJson('config.json', {}));
+let savedConfig = withExistingArt(GA.cleanConfig(readJson('config.json', {})));
 GA.applyConfig(savedConfig);
+gcArt(savedConfig);
 const rooms = new Map();
 const anyPlaying = () => [...rooms.values()].some((r) => r.state === 'playing' && r.sim && !r.sim.over);
 function applyConfigIfIdle() {
@@ -414,11 +501,50 @@ async function handleApi(req, res, url) {
         logEvent('map_deleted', { user: me.name, ip, ua, note: gone.name + ' (' + gone.id + ')' });
         return json(res, 200, { maps: savedMaps });
       }
+      // ---- pictures for buildings / units
+      if (url === '/api/admin/art/info' && m === 'GET') return json(res, 200, { ai: !!GEMINI_API_KEY, model: GEMINI_API_KEY ? GEMINI_IMAGE_MODEL : '' });
+      if (url === '/api/admin/art/generate' && m === 'POST') {
+        const b = await readBody(req, 3 * 1024 * 1024);
+        const prompt = String(b.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+        if (prompt.length < 3) return json(res, 400, { error: 'Describe what to draw (at least a few words).' });
+        if (b.kind !== 'b' && b.kind !== 'u') return json(res, 400, { error: 'kind must be b or u' });
+        const ref = b.ref ? dataUrl(b.ref, 2.8 * 1024 * 1024) : null;
+        if (b.ref && !ref) return json(res, 400, { error: 'The reference picture is not a valid PNG/JPEG/WebP.' });
+        if (!GEMINI_API_KEY) return json(res, 503, { error: 'AI drawing is not set up: put GEMINI_API_KEY in the .env file and restart the server.' });
+        if (artBusy >= 2) return json(res, 429, { error: 'Two pictures are already being drawn - wait a moment.' });
+        artBusy++;
+        try {
+          const img = await geminiGenerate(artPrompt(b.kind, prompt, b.style, !!ref), ref);
+          logEvent('art_generated', { user: me.name, ip, ua, note: (b.kind === 'b' ? 'building: ' : 'unit: ') + prompt.slice(0, 80) });
+          return json(res, 200, { image: `data:${img.mime};base64,${img.data}` });
+        } catch (e) {
+          logEvent('art_generated', { user: me.name, ip, ua, ok: false, note: e.message.slice(0, 120) });
+          return json(res, e.status || 502, { error: e.message });
+        } finally { artBusy--; }
+      }
+      if (url === '/api/admin/art' && m === 'PUT') {
+        const b = await readBody(req, 1024 * 1024);
+        if (!validArtType(b.type)) return json(res, 400, { error: 'Unknown building / unit id' });
+        const png = dataUrl(b.png, ART_MAX_BYTES * 1.4);
+        const buf = png && png.mime === 'image/png' ? Buffer.from(png.data, 'base64') : null;
+        const size = buf && pngSize(buf);
+        if (!size) return json(res, 400, { error: 'The picture must be a PNG.' });
+        if (buf.length > ART_MAX_BYTES) return json(res, 413, { error: 'The picture is too big (max ' + ART_MAX_BYTES / 1024 + ' KB) - use a smaller size.' });
+        if (size.w < 8 || size.h < 8 || size.w > ART_MAX_SIDE || size.h > ART_MAX_SIDE) return json(res, 400, { error: `The picture must be between 8 and ${ART_MAX_SIDE} pixels on each side.` });
+        if (fs.readdirSync(ART_DIR).length >= ART_MAX_FILES) return json(res, 507, { error: 'Too many stored pictures - save your config (unused ones are cleaned up after an hour) and try again.' });
+        let v = Math.floor(Date.now() / 1000);
+        while (fs.existsSync(artPath(b.type, v))) v++;
+        const tmp = artPath(b.type, v) + '.tmp';
+        fs.writeFileSync(tmp, buf); fs.renameSync(tmp, artPath(b.type, v));
+        logEvent('art_uploaded', { user: me.name, ip, ua, note: b.type + ' (' + Math.round(buf.length / 1024) + ' KB)' });
+        return json(res, 200, { v });
+      }
       if (url === '/api/admin/config' && m === 'GET') return json(res, 200, { config: savedConfig, applied: GA.CONFIG, playing: anyPlaying() });
       if (url === '/api/admin/config' && m === 'PUT') {
         const b = await readBody(req, 512 * 1024);
-        savedConfig = GA.cleanConfig(b.config);
+        savedConfig = withExistingArt(GA.cleanConfig(b.config));
         writeJson('config.json', savedConfig);
+        gcArt(savedConfig);
         logEvent('config_saved', { user: me.name, ip, ua, note: Object.keys(savedConfig).filter((k) => Object.keys(savedConfig[k]).length).join(', ') || 'defaults' });
         const applied = applyConfigIfIdle();
         return json(res, 200, { config: savedConfig, appliedNow: applied });
@@ -426,6 +552,7 @@ async function handleApi(req, res, url) {
       if (url === '/api/admin/config/reset' && m === 'POST') {
         savedConfig = GA.cleanConfig({});
         writeJson('config.json', savedConfig);
+        gcArt(savedConfig);
         logEvent('config_reset', { user: me.name, ip, ua });
         return json(res, 200, { config: savedConfig, appliedNow: applyConfigIfIdle() });
       }
@@ -440,6 +567,17 @@ async function handleApi(req, res, url) {
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent((req.url || '/').split('?')[0]);
   if (url.startsWith('/api/')) { handleApi(req, res, url); return; }
+  if (url.startsWith('/art/')) {
+    const m = ART_FILE_RE.exec(url.slice(5));
+    if (!m) { res.writeHead(404); res.end('Not found'); return; }
+    fs.readFile(artPath(m[1], m[2]), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      // the file name contains its version, so it never changes
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' });
+      res.end(data);
+    });
+    return;
+  }
   const rel = url === '/' ? 'index.html' : url === '/admin' ? 'admin.html' : url;
   const file = path.normalize(path.join(PUBLIC, rel));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); res.end('Forbidden'); return; }

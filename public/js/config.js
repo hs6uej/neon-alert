@@ -57,6 +57,7 @@
       proj: { t: 'enum', values: ['bolt', 'rocket', 'plasma', 'shell', 'rail'], label: 'Visual' },
     },
     mult: num(0, 5, 0.05, 'Multiplier'),
+    art: { s: num(0.3, 3, 0.05, 'Picture size'), y: num(-0.6, 0.6, 0.01, 'Picture height') },
     bots: {
       think: num(0.1, 10, 0.1, 'Think interval (s)'),
       speed: num(0.2, 3, 0.05, 'Production speed x'),
@@ -92,7 +93,7 @@
 
   // Returns a cleaned copy of `raw` containing only known, in-range values that differ from the defaults.
   GA.cleanConfig = function (raw) {
-    const out = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [] };
+    const out = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [], art: {} };
     if (!raw || typeof raw !== 'object') return out;
     const diff = (a, b) => JSON.stringify(a) !== JSON.stringify(b);
     const rawCustom = raw.custom && typeof raw.custom === 'object' ? raw.custom : {};
@@ -143,6 +144,12 @@
     }
     const allIds = GA.BUILTIN_TYPES.concat(Object.keys(out.custom.types));
     out.disabled = Array.from(new Set(Array.isArray(raw.disabled) ? raw.disabled : [])).filter((x) => allIds.includes(x) && !GA.PROTECTED_TYPES.includes(x)).sort();
+    // ---- pictures (files live on the server: /art/<type>-<version>.png). Only the reference and the placement are stored here.
+    for (const [id, a] of Object.entries(raw.art && typeof raw.art === 'object' ? raw.art : {})) {
+      if (!allIds.includes(id) || !a || typeof a !== 'object' || !Number.isSafeInteger(a.v) || a.v < 1 || a.v > 9999999999999) continue;
+      const s = clampNum(a.s === undefined ? 1 : a.s, GA.SCHEMA.art.s), y = clampNum(a.y === undefined ? 0 : a.y, GA.SCHEMA.art.y);
+      out.art[id] = { v: a.v, s: Math.round((s === null ? 1 : s) * 100) / 100, y: Math.round((y === null ? 0 : y) * 100) / 100 };
+    }
     for (const [t, fields] of Object.entries(raw.defs || {})) {
       if (!GA.BASE.defs[t] || !fields || typeof fields !== 'object') continue;
       const base = GA.BASE.defs[t];
@@ -210,12 +217,14 @@
       const d = GA.DEFS[t], b = GA.BASE.defs[t];
       for (const f of DEF_FIELDS) if (b[f] !== undefined) d[f] = clone(b[f]);
       if (b.weapon === undefined) delete d.weapon;
+      delete d.art;
     }
     for (const k of Object.keys(GA.WEAPONS)) for (const f of Object.keys(GA.BASE.weapons[k])) GA.WEAPONS[k][f] = GA.BASE.weapons[k][f];
     for (const w of Object.keys(GA.MULT)) Object.assign(GA.MULT[w], GA.BASE.mult[w]);
     for (const l of Object.keys(GA.BOT_LEVELS)) Object.assign(GA.BOT_LEVELS[l], GA.BASE.bots[l]);
     Object.assign(GA.SETTINGS, GA.BASE.settings);
 
+    for (const [id, a] of Object.entries(cfg.art)) if (GA.DEFS[id] && GA.BASE.defs[id]) GA.DEFS[id].art = { id, v: a.v, s: a.s, y: a.y };
     for (const [t, f] of Object.entries(cfg.defs)) Object.assign(GA.DEFS[t], f);
     for (const [k, f] of Object.entries(cfg.weapons)) Object.assign(GA.WEAPONS[k], f);
     for (const [w, r] of Object.entries(cfg.mult)) Object.assign(GA.MULT[w], r);
@@ -229,8 +238,11 @@
     }
     for (const [id, t] of Object.entries(cfg.custom.types)) {
       const { base, ...fields } = t, src = GA.DEFS[base], d = clone(src);
-      delete d.wp; delete d.fly; delete d.neutral;
+      delete d.wp; delete d.fly; delete d.neutral; delete d.art;
       Object.assign(d, fields);
+      // a copy looks like the type it was made from (including that type's picture) unless it gets a picture of its own
+      const own = cfg.art[id];
+      if (own) d.art = { id, v: own.v, s: own.s, y: own.y }; else if (src.art) d.art = Object.assign({}, src.art);
       d.id = id; d.custom = true; d.base = base; d.role = src.role || base; d.look = src.look || base; d.buildable = true;
       if (!d.weapon) delete d.weapon;
       GA.DEFS[id] = d;
@@ -252,5 +264,5 @@
     GA.CONFIG = cfg;
     return cfg;
   };
-  GA.CONFIG = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [] };
+  GA.CONFIG = { defs: {}, weapons: {}, mult: {}, bots: {}, settings: {}, custom: { types: {}, weapons: {} }, disabled: [], art: {} };
 })();

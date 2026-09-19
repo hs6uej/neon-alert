@@ -34,6 +34,7 @@
     try {
       const j = await api('/api/config');
       GA.applyConfig(j.config);
+      GA.preloadArt(); // start fetching the building / unit pictures now so they are ready when a game starts
       GA.setCustomMaps(j.maps || []);
       for (const k of Object.keys(thumbs)) if (k.startsWith('c_')) delete thumbs[k];
     } catch (e) { /* offline: built-in defaults */ }
@@ -475,7 +476,7 @@
     menu.classList.add('hidden');
     document.body.classList.add('ingame');
     const onStart = (m) => {
-      if (m.config) GA.applyConfig(m.config); // use exactly the rules the server is running
+      if (m.config) { GA.applyConfig(m.config); GA.preloadArt(); } // use exactly the rules the server is running
       game = new GA.Game(ui, renderer, canvas, m, t);
       ui.attach(game);
       GA.Audio.init(); GA.Audio.startMusic();
